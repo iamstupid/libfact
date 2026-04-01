@@ -13,7 +13,8 @@ namespace zfactor{
 namespace fast_sieve{
     using namespace std;
     constexpr uint32_t mini_block_size = 16384;
-    constexpr uint32_t macro_block_size = mini_block_size * 256;
+    constexpr uint32_t mini_block_count= 256;
+    constexpr uint32_t macro_block_size = mini_block_size * mini_block_count;
 
     const uint8_t sieve_pos[]={1,7,11,13,17,19,23,29};
     const uint8_t sieve_idx[30] = {
@@ -74,5 +75,11 @@ namespace fast_sieve{
     }
     // sieve small:
     inline void sieve_small();
+    // intermediate prime sieve
+    struct int_primeset{
+        struct int_prime{
+            
+        };
+    };
 }
 }
