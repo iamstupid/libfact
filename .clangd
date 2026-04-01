@@ -1,3 +1,15 @@
 CompileFlags:
-  Add: [-march=native]
   CompilationDatabase: build/x64-release
+  Add:
+    - -imsvc
+    - C:/Program Files/Microsoft Visual Studio/18/Community/VC/Tools/MSVC/14.50.35717/include
+    - -imsvc
+    - C:/Program Files (x86)/Windows Kits/10/include/10.0.26100.0/ucrt
+    - -imsvc
+    - C:/Program Files (x86)/Windows Kits/10/include/10.0.26100.0/um
+    - -imsvc
+    - C:/Program Files (x86)/Windows Kits/10/include/10.0.26100.0/shared
+    - -imsvc
+    - C:/Program Files (x86)/Windows Kits/10/include/10.0.26100.0/winrt
+    - -imsvc
+    - C:/Program Files (x86)/Windows Kits/10/include/10.0.26100.0/cppwinrt
