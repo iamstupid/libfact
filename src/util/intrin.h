@@ -2,6 +2,7 @@
 // zfactor/intrin.h — platform detection, feature flags, intrinsic wrappers
 
 #include <cstdint>
+#include <cmath>
 
 // ================================================================
 //  ISA feature detection
@@ -315,3 +316,6 @@ inline void vec_fill(void *dst, vec val, size_t bytes) {
 }
 
 } // namespace zfactor
+
+// isqrt
+inline uint32_t isqrt(uint64_t t){ return (uint32_t)sqrt((double)t);}
