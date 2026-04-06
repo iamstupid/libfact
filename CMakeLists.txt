@@ -25,3 +25,21 @@ else()
     target_compile_options(zfactor PRIVATE -Wall -Wextra -march=native)
     target_compile_options(zfactor PRIVATE $<$<CONFIG:Release>:-O2>)
 endif()
+
+# --- tests ---
+enable_testing()
+
+add_executable(test_primesieve test/test_primesieve.cpp)
+target_include_directories(test_primesieve PRIVATE src third_party)
+if(NOT EMSCRIPTEN)
+    target_link_libraries(test_primesieve PRIVATE mimalloc-static)
+endif()
+if(MSVC)
+    target_compile_options(test_primesieve PRIVATE /fp:fast /W4)
+    target_compile_options(test_primesieve PRIVATE $<$<CONFIG:Release>:/O2>)
+else()
+    target_compile_options(test_primesieve PRIVATE -Wall -Wextra -march=native)
+    target_compile_options(test_primesieve PRIVATE $<$<CONFIG:Release>:-O2>)
+endif()
+add_test(NAME primesieve COMMAND test_primesieve)
+
