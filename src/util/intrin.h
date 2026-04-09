@@ -1,6 +1,7 @@
 #pragma once
 // zfactor/intrin.h — platform detection, feature flags, intrinsic wrappers
 
+#include <cstddef>
 #include <cstdint>
 #include <cmath>
 
@@ -45,47 +46,22 @@
 //  Compiler detection
 // ================================================================
 
-#if defined(_MSC_VER)
-#define ZFACTOR_MSVC 1
-#include <intrin.h>
-#elif defined(__GNUC__) || defined(__clang__)
-#define ZFACTOR_GCC_COMPAT 1
+#if !defined(__GNUC__) && !defined(__clang__)
+#error "zfactor requires GCC or Clang."
 #endif
+
+#define ZFACTOR_GCC_COMPAT 1
 
 // ================================================================
 //  Target attributes (for multi-versioned functions)
 // ================================================================
 
-#ifdef ZFACTOR_GCC_COMPAT
 #define ZFACTOR_TARGET(x) __attribute__((target(x)))
 #define ZFACTOR_NOINLINE __attribute__((noinline))
-#else
-#define ZFACTOR_TARGET(x)
-#define ZFACTOR_NOINLINE __declspec(noinline)
-#endif
 
 // ================================================================
 //  Wide multiply + carry chain primitives
 // ================================================================
-
-#if defined(ZFACTOR_MSVC)
-
-inline uint64_t mulhi(uint64_t a, uint64_t b) {
-  uint64_t hi;
-  _umul128(a, b, &hi);
-  return hi;
-}
-inline uint64_t mullo_hi(uint64_t a, uint64_t b, uint64_t *hi) {
-  return _umul128(a, b, hi);
-}
-inline uint8_t addcarry(uint8_t c, uint64_t a, uint64_t b, uint64_t *out) {
-  return _addcarry_u64(c, a, b, (unsigned long long *)out);
-}
-inline uint8_t subborrow(uint8_t c, uint64_t a, uint64_t b, uint64_t *out) {
-  return _subborrow_u64(c, a, b, (unsigned long long *)out);
-}
-
-#elif defined(ZFACTOR_GCC_COMPAT)
 
 using u128 = unsigned __int128;
 
@@ -108,28 +84,16 @@ inline uint8_t subborrow(uint8_t c, uint64_t a, uint64_t b, uint64_t *out) {
   return (uint8_t)(r >> 127);
 }
 
-#endif
-
 // ================================================================
 //  Bit operations
 // ================================================================
 
 inline int clz_u64(uint64_t x) {
-#if defined(ZFACTOR_GCC_COMPAT)
   return x ? __builtin_clzll(x) : 64;
-#elif defined(ZFACTOR_MSVC)
-  unsigned long idx;
-  return _BitScanReverse64(&idx, x) ? 63 - (int)idx : 64;
-#endif
 }
 
 inline int ctz_u64(uint64_t x) {
-#if defined(ZFACTOR_GCC_COMPAT)
   return x ? __builtin_ctzll(x) : 64;
-#elif defined(ZFACTOR_MSVC)
-  unsigned long idx;
-  return _BitScanForward64(&idx, x) ? (int)idx : 64;
-#endif
 }
 
 // ================================================================
@@ -137,16 +101,7 @@ inline int ctz_u64(uint64_t x) {
 // ================================================================
 
 inline uint64_t popcount_u64(uint64_t x) {
-#if defined(__GNUC__) || defined(__clang__)
   return (uint64_t)__builtin_popcountll(x);
-#elif defined(_MSC_VER) && defined(_M_X64)
-  return __popcnt64(x);
-#else
-  x -= (x >> 1) & 0x5555555555555555ULL;
-  x = (x & 0x3333333333333333ULL) + ((x >> 2) & 0x3333333333333333ULL);
-  return (((x + (x >> 4)) & 0x0F0F0F0F0F0F0F0FULL) * 0x0101010101010101ULL) >>
-         56;
-#endif
 }
 
 namespace zfactor {

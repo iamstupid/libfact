@@ -4,3 +4,6 @@ out/
 .vscode/
 *.user
 CMakeSettings.json
+__pycache__/
+*.pyc
+third_party/benchmarks/

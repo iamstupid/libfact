@@ -10,11 +10,11 @@
 #include <string>
 #include <vector>
 
-#include "zfactor/uint.h"
+#include "zfactor/fixint/uint.h"
 
 namespace {
 
-using zfactor::mpn::limb_t;
+using zfactor::fixint::mpn::limb_t;
 
 template<std::size_t N>
 using Arr = std::array<limb_t, N>;
@@ -284,15 +284,15 @@ std::vector<Arr<N>> build_cases() {
 }
 
 template<int N>
-zfactor::UInt<N> make_uint(const Arr<N>& a) {
-    zfactor::UInt<N> out;
+zfactor::fixint::UInt<N> make_uint(const Arr<N>& a) {
+    zfactor::fixint::UInt<N> out;
     std::copy(a.begin(), a.end(), out.d);
     return out;
 }
 
 template<int N>
 void run_suite() {
-    using namespace zfactor;
+    using namespace zfactor::fixint;
     auto cases = build_cases<N>();
 
     {
@@ -363,7 +363,7 @@ void run_suite() {
 
         auto ua = make_uint<N>(a);
         auto hex = ua.to_hex();
-        CHECK(zfactor::UInt<N>::from_hex(hex) == ua);
+        CHECK(zfactor::fixint::UInt<N>::from_hex(hex) == ua);
     }
 
     for (std::size_t i = 0; i < cases.size(); ++i) {
@@ -375,6 +375,7 @@ void run_suite() {
         Arr<N> and_out{};
         Arr<N> or_out{};
         Arr<N> xor_out{};
+        Arr<N> not_out{};
 
         auto [ref_add_out, ref_add_cy] = ref_add<N>(a, b);
         auto [ref_sub_out, ref_sub_bw] = ref_sub<N>(a, b);
@@ -384,6 +385,7 @@ void run_suite() {
         mpn::bitand_<N>(and_out.data(), a.data(), b.data());
         mpn::bitor_<N>(or_out.data(), a.data(), b.data());
         mpn::bitxor_<N>(xor_out.data(), a.data(), b.data());
+        mpn::bitnot_<N>(not_out.data(), a.data());
 
         require_eq(add_out, ref_add_out, "add");
         require_eq(sub_out, ref_sub_out, "sub");
@@ -395,6 +397,7 @@ void run_suite() {
             CHECK(and_out[std::size_t(limb)] == (a[std::size_t(limb)] & b[std::size_t(limb)]));
             CHECK(or_out[std::size_t(limb)] == (a[std::size_t(limb)] | b[std::size_t(limb)]));
             CHECK(xor_out[std::size_t(limb)] == (a[std::size_t(limb)] ^ b[std::size_t(limb)]));
+            CHECK(not_out[std::size_t(limb)] == ~a[std::size_t(limb)]);
         }
 
         Arr<N> restore{};
@@ -445,12 +448,13 @@ void run_suite() {
 
         auto ua = make_uint<N>(a);
         auto ub = make_uint<N>(b);
-        CHECK(zfactor::UInt<N>::from_hex(ua.to_hex()) == ua);
+        CHECK(zfactor::fixint::UInt<N>::from_hex(ua.to_hex()) == ua);
         CHECK((ua + ub) == make_uint<N>(ref_add_out));
         CHECK((ua - ub) == make_uint<N>(ref_sub_out));
         CHECK((ua & ub) == make_uint<N>(and_out));
         CHECK((ua | ub) == make_uint<N>(or_out));
         CHECK((ua ^ ub) == make_uint<N>(xor_out));
+        CHECK((~ua) == make_uint<N>(not_out));
         CHECK((ua << 13) == make_uint<N>(ref_lshift<N>(a, 13)));
         CHECK((ua >> 11) == make_uint<N>(ref_rshift<N>(a, 11)));
 
@@ -462,7 +466,7 @@ void run_suite() {
 } // namespace
 
 TEST_CASE("single limb primitives") {
-    using namespace zfactor::mpn;
+    using namespace zfactor::fixint::mpn;
     std::mt19937_64 rng(123456789u);
     for (int i = 0; i < 1000; ++i) {
         limb_t a = rng();
@@ -499,7 +503,9 @@ TEST_CASE("single limb primitives") {
     X(8)                       \
     X(9)                       \
     X(12)                      \
-    X(16)
+    X(16)                      \
+    X(17)                      \
+    X(24)
 
 #define ZFACTOR_MAKE_TEST(N) \
     TEST_CASE("mpn and UInt suite N=" #N) { run_suite<N>(); }

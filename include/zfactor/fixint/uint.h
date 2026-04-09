@@ -12,9 +12,9 @@
 #include <string_view>
 #include <type_traits>
 
-#include "mpn/mpn.h"
+#include "mpn.h"
 
-namespace zfactor {
+namespace zfactor::fixint {
 
 template<int N>
 struct UInt {
@@ -187,4 +187,4 @@ static_assert(std::is_standard_layout_v<UIntWide<1>>);
 static_assert(sizeof(UIntWide<2>) == sizeof(mpn::limb_t) * 4);
 static_assert(offsetof(UIntWide<2>, hi) == sizeof(UInt<2>));
 
-} // namespace zfactor
+} // namespace zfactor::fixint

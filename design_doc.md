@@ -142,7 +142,8 @@ template<int N>
 struct MontCtx {
     UInt<N> mod;          // the modulus n
     UInt<N> r2_mod;       // R² mod n  (for to_mont: REDC(a * R²) = aR mod n)
-    uint64_t inv;         // -n⁻¹ mod 2⁶⁴ (only lowest limb needed for REDC)
+    UInt<N> r_mod;        // R mod n   (unity in Montgomery form, i.e. representation of 1)
+    uint64_t inv;         // +n⁻¹ mod 2⁶⁴ (positive inverse; only lowest limb needed)
 
     void init(const UInt<N>& n);  // compute all derived constants
 };
@@ -157,23 +158,49 @@ CPU uses a separated two-phase approach: full schoolbook multiply producing `UIn
 - **Better ILP.** The schoolbook multiply phase has substantial instruction-level parallelism — independent partial products can be in-flight simultaneously on modern OoO cores. CIOS introduces a per-iteration serial dependency (`m = t[0] * inv` depends on the previous iteration's completed reduction).
 - **Register pressure is acceptable.** For the target range N=4–8, the 2N-limb intermediate (8–16 × u64) is tight but manageable on x86-64's 16 GPRs. For N=8 the compiler will spill a few values to stack, but montmul is compute-bound so L1 spills are negligible.
 
-The REDC phase processes the `UInt<2*N>` result:
+### 4.2.1 Positive-Inverse REDC (Hurchalla variant)
+
+REDC uses the **positive** inverse `n⁻¹ mod R` rather than the traditional negative inverse `−n⁻¹ mod R`. The reduction computes `m = t_lo * inv` and *subtracts* `m * n` from `t`, instead of adding. This has concrete advantages:
+
+1. **The low-limb subtraction is provably zero** (`t_lo − (t_lo * inv * n) ≡ 0 mod R`), so the entire low-half subtraction can be skipped — only the high-half borrow chain matters.
+2. **One conditional instead of two.** Traditional REDC produces a result in `[−n, n)` requiring both a negativity check and an overflow check. Positive-inverse REDC produces `[−n, n)` requiring only a single negativity check (add `n` if result is negative). On x86-64 this is a single `cmov` instead of two.
+3. ~2 fewer cycles per REDC on Skylake-class cores (9 vs 11 for single-limb).
 
 ```cpp
 template<int N>
 void mont_redc(UInt<N>& r, const UInt<2*N>& t, const MontCtx<N>& ctx) {
-    UInt<2*N> tmp = t;
+    UInt<N> m;
+    // Phase 1: compute quotient limbs m[0..N-1]
+    // Only the high-half result of (t - m*n) is needed.
+    UInt<N> hi = upper<N>(t);
     for (int i = 0; i < N; i++) {
-        uint64_t m = tmp[i] * ctx.inv;
-        // tmp[i..i+N] += m * mod, with carry propagation
+        m[i] = t[i] * ctx.inv;           // m[i] for positive inverse
+        // hi -= mulhi(m[i..], ctx.mod)   // subtract high part of m*n
     }
-    // Extract high N limbs + conditional subtract
-    for (int i = 0; i < N; i++) r[i] = tmp[i + N];
-    csub<N>(r, r, ctx.mod);
+    // Phase 2: if hi < 0 (borrow set), add mod back
+    if (borrow) add<N>(r, hi, ctx.mod);
+    else        r = hi;
 }
 ```
 
-Carry never exceeds the 2N-limb bound (provable), so no overflow handling is needed.
+The inverse is computed via Dumas' algorithm (2012): starting from `n⁻¹ mod 2 = 1` (since n is odd), Newton-iterate `x ← x(2 − nx)` to double the number of correct bits each step. 6 iterations suffice for 64-bit precision.
+
+### 4.2.2 Fused Multiply-Add/Sub (fmadd / fmsub)
+
+For expressions like `a*b + c` or `a*b - c*d` that arise in ECC point arithmetic, the naive approach is `REDC(a*b) + c` — two operations. The fused approach adds/subtracts `c` into the **high half** of the wide product *before* REDC:
+
+```
+fmadd(a, b, c):
+    {u_hi, u_lo} = mul_full(a, b)      // wide product
+    u_hi += c                           // add into high half (1 N-limb add)
+    return REDC({u_hi, u_lo})           // single REDC
+```
+
+This is correct because `REDC({u_hi + c, u_lo}) = REDC({u_hi, u_lo}) + c·R⁻¹·R = a·b + c (mod n)` — the REDC implicitly multiplies by R⁻¹, and the c sits in the R-scaled high half.
+
+The ILP advantage: `u_hi += c` executes in parallel with the first iteration of REDC (which only reads `u_lo`). This saves ~3 cycles of serial dependency versus separate multiply + reduce + add.
+
+`fmsub(a, b, c)` is analogous with subtraction. Both require c to be in `[0, 2·mod)` (i.e. `Mod<N>` or `ModLazy<N>`).
 
 **GPU note:** CIOS may still be preferable for GPU kernels where register pressure is a real constraint (e.g. 255 registers per thread on NVIDIA). This is a local decision within the WGSL shader code and does not affect the CPU type system.
 
@@ -236,6 +263,10 @@ Operator overloads enforce valid transitions:
 | `ModWide.redc()` | `Mod` | Montgomery reduction via `ctx<N>()` |
 | `ModLazy.reduce()` | `Mod` | conditional subtraction via `ctx<N>()` |
 | `Mod.sqr()` | `ModWide` | optimized squaring, no REDC |
+| `fmadd(Mod, Mod, Mod)` | `Mod` | fused `a*b + c`: add c into hi half, single REDC |
+| `fmsub(Mod, Mod, Mod)` | `Mod` | fused `a*b - c`: sub c from hi half, single REDC |
+| `fmadd(Mod, Mod, ModLazy)` | `Mod` | fused with lazy addend (c ∈ [0, 2·mod)) |
+| `fmsub(Mod, Mod, ModLazy)` | `Mod` | fused with lazy subtrahend |
 
 Illegal operations (e.g. `ModWide * ModWide`) are not defined and produce compile-time errors.
 
@@ -245,16 +276,36 @@ Implicit conversion from `ModLazy` to `Mod` (via `operator Mod<N>()`) calls `red
 
 ### 4.5 Lazy REDC Fusion
 
-The primary fusion opportunity is in ECC point operations, where patterns like `a*b + c` or `a*b - c*d` can accumulate in 2N-limb space and REDC once instead of twice. Example in Montgomery curve xDBL:
+Two complementary fusion strategies:
+
+**Strategy 1: Accumulate in wide space.** Multiple products can be added/subtracted as `ModWide` values and REDC'd once instead of per-product. Useful when the final expression is a linear combination of products.
+
+**Strategy 2: fmadd/fmsub.** For `a*b ± c`, the addend/subtrahend is folded into the high half before REDC (§4.2.2). This is cheaper than Strategy 1 when only one product is involved, since it avoids the 2N-limb add entirely.
+
+Example in Montgomery curve xDBL:
 
 ```
-u = X + Z        → ModLazy  (no csub)
-v = X - Z        → ModLazy  (no csub)
-uu = (u * u)     → ModWide  (no REDC yet)
-...
+u = X + Z            → ModLazy  (no csub)
+v = X - Z            → ModLazy  (no csub)
+uu = u.sqr().redc()  → Mod
+vv = v.sqr().redc()  → Mod
+diff = uu - vv       → ModLazy
+X2 = (uu * vv).redc()                  → Mod
+Z2 = fmadd(a24, diff, vv) * diff).redc()  → Mod  (one fewer REDC via fmadd)
 ```
 
-The type system makes this automatic — the programmer writes natural expressions and the types determine when reduction actually happens.
+The type system makes the choice explicit — `fmadd`/`fmsub` return `Mod` directly, while `*` returns `ModWide` for manual accumulation.
+
+### 4.6 Multi-Base Exponentiation
+
+For operations that require multiple independent modular exponentiations with the same exponent (e.g. batch Miller-Rabin, ECM multi-curve stage-1), interleaving K independent exponent chains exploits ILP across multiply units:
+
+```cpp
+template<int N, int K>
+void pow_multi(Mod<N> (&bases)[K], const UInt<N>& exp, const MontCtx<N>& ctx);
+```
+
+Modern x86-64 cores have 3–4 integer multiply units but scalar modexp uses only 1 chain. With K=3–4, all multipliers stay busy. The exponent bits are scanned once, and each square/multiply step is applied to all K bases before advancing to the next bit.
 
 ---
 
@@ -589,6 +640,8 @@ ecm,256,40,unbalanced,3,567890123,1
 |---|---|---|
 | BigInt representation | Fixed-limb `UInt<N>` template | Full compile-time unrolling, zero heap allocation |
 | Modular arithmetic | Separated multiply-then-reduce (CPU), CIOS (GPU) | Type-system-clean UInt<2N> intermediate; better ILP on OoO cores; CIOS for GPU register pressure |
+| REDC variant | Positive-inverse subtraction (Hurchalla/Mayer) | Skips low-half sub (provably zero); single cmov vs two; ~2 fewer cycles per REDC |
+| Fused operations | fmadd/fmsub: add/sub into hi-half before REDC | ILP: add overlaps with first REDC iteration; saves ~3 cycles vs separate mul+reduce+add |
 | Context passing | Thread-local stack | Zero per-value overhead, safe nesting, automatic cleanup via RAII |
 | Reduction tracking | Three-type system (Mod/ModLazy/ModWide) | Compile-time safety, enables lazy REDC fusion |
 | ECM curve form | Montgomery XZ (stage 1) → Weierstrass (stage 2) | Montgomery ladder is simplest and fast; Weierstrass needed for stage 2 addition |

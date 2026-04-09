@@ -2,30 +2,64 @@
     "version": 6,
     "configurePresets": [
         {
-            "name": "vs18-base",
+            "name": "linux-base",
             "hidden": true,
             "generator": "Ninja",
-            "architecture": { "value": "x64", "strategy": "external" },
-            "toolset": { "value": "host=x64", "strategy": "external" },
-            "cacheVariables": {
-                "CMAKE_CXX_COMPILER": "C:/Program Files/Microsoft Visual Studio/18/Community/VC/Tools/MSVC/14.50.35717/bin/Hostx64/x64/cl.exe",
-                "CMAKE_MAKE_PROGRAM": "C:/Program Files/Microsoft Visual Studio/18/Community/Common7/IDE/CommonExtensions/Microsoft/CMake/Ninja/ninja.exe"
-            }
+            "binaryDir": "${sourceDir}/build/${presetName}"
         },
         {
-            "name": "x64-debug",
-            "displayName": "x64 Debug (VS 18)",
-            "inherits": "vs18-base",
-            "binaryDir": "${sourceDir}/build/${presetName}",
+            "name": "linux-gcc14-debug",
+            "displayName": "Linux GCC 14 Debug",
+            "inherits": "linux-base",
+            "environment": {
+                "CC": "gcc-14",
+                "CXX": "g++-14"
+            },
             "cacheVariables": {
                 "CMAKE_BUILD_TYPE": "Debug"
             }
         },
         {
-            "name": "x64-release",
-            "displayName": "x64 Release (VS 18)",
-            "inherits": "vs18-base",
-            "binaryDir": "${sourceDir}/build/${presetName}",
+            "name": "linux-gcc14-release",
+            "displayName": "Linux GCC 14 Release",
+            "inherits": "linux-base",
+            "environment": {
+                "CC": "gcc-14",
+                "CXX": "g++-14"
+            },
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Release"
+            }
+        },
+        {
+            "name": "linux-gcc14-release-gmp",
+            "displayName": "Linux GCC 14 Release + GMP",
+            "inherits": "linux-gcc14-release",
+            "cacheVariables": {
+                "ZFACTOR_BENCH_GMP": "ON",
+                "ZFACTOR_GMP_ROOT": "${sourceDir}/build/deps/gmp-install"
+            }
+        },
+        {
+            "name": "linux-clang-debug",
+            "displayName": "Linux Clang Debug",
+            "inherits": "linux-base",
+            "environment": {
+                "CC": "clang",
+                "CXX": "clang++"
+            },
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Debug"
+            }
+        },
+        {
+            "name": "linux-clang-release",
+            "displayName": "Linux Clang Release",
+            "inherits": "linux-base",
+            "environment": {
+                "CC": "clang",
+                "CXX": "clang++"
+            },
             "cacheVariables": {
                 "CMAKE_BUILD_TYPE": "Release"
             }
@@ -33,12 +67,54 @@
     ],
     "buildPresets": [
         {
-            "name": "x64-debug",
-            "configurePreset": "x64-debug"
+            "name": "linux-gcc14-debug",
+            "configurePreset": "linux-gcc14-debug"
         },
         {
-            "name": "x64-release",
-            "configurePreset": "x64-release"
+            "name": "linux-gcc14-release",
+            "configurePreset": "linux-gcc14-release"
+        },
+        {
+            "name": "linux-gcc14-release-gmp",
+            "configurePreset": "linux-gcc14-release-gmp"
+        },
+        {
+            "name": "linux-clang-debug",
+            "configurePreset": "linux-clang-debug"
+        },
+        {
+            "name": "linux-clang-release",
+            "configurePreset": "linux-clang-release"
+        }
+    ],
+    "testPresets": [
+        {
+            "name": "linux-gcc14-debug",
+            "configurePreset": "linux-gcc14-debug",
+            "output": {
+                "outputOnFailure": true
+            }
+        },
+        {
+            "name": "linux-gcc14-release",
+            "configurePreset": "linux-gcc14-release",
+            "output": {
+                "outputOnFailure": true
+            }
+        },
+        {
+            "name": "linux-clang-debug",
+            "configurePreset": "linux-clang-debug",
+            "output": {
+                "outputOnFailure": true
+            }
+        },
+        {
+            "name": "linux-clang-release",
+            "configurePreset": "linux-clang-release",
+            "output": {
+                "outputOnFailure": true
+            }
         }
     ]
 }

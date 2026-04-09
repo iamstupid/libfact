@@ -1,23 +1,20 @@
 #include <array>
-#include <atomic>
 #include <chrono>
+#include <cstdlib>
+#include <cstring>
 #include <cstdio>
 #include <cstdint>
 #include <random>
-
-#if defined(_MSC_VER)
-#include <intrin.h>
-#endif
 
 #ifdef ZFACTOR_BENCH_GMP
 #include <gmp.h>
 #endif
 
-#include "zfactor/uint.h"
+#include "zfactor/fixint/uint.h"
 
 namespace {
 
-using zfactor::mpn::limb_t;
+using zfactor::fixint::mpn::limb_t;
 
 template<int N>
 using Arr = std::array<limb_t, N>;
@@ -27,29 +24,15 @@ using Arr2 = std::array<limb_t, 2 * N>;
 
 template<typename T>
 inline void escape(const T& value) {
-#if defined(_MSC_VER)
-    (void)value;
-    _ReadWriteBarrier();
-#else
     __asm__ __volatile__("" : : "g"(&value) : "memory");
-#endif
 }
 
 inline void compiler_barrier() {
-#if defined(_MSC_VER)
-    _ReadWriteBarrier();
-#else
     __asm__ __volatile__("" ::: "memory");
-#endif
 }
 
-#if defined(_MSC_VER)
-#define ZFACTOR_NOINLINE __declspec(noinline)
-#define ZFACTOR_USED
-#else
 #define ZFACTOR_NOINLINE __attribute__((noinline))
 #define ZFACTOR_USED __attribute__((used))
-#endif
 
 struct Stats {
     double ns_per_item = 0.0;
@@ -81,7 +64,7 @@ struct Batch {
             for (auto& limb : a[i]) limb = rng();
             for (auto& limb : b[i]) limb = rng();
             scalar[i] = rng();
-            shift[i] = unsigned(rng() % (N * 64));
+            shift[i] = unsigned(rng() % 63u) + 1u;
         }
     }
 };
@@ -92,7 +75,7 @@ Stats bench_add(const Batch<N>& batch, std::size_t rounds) {
     volatile limb_t sink = 0;
     auto stats = run_bench(Batch<N>::count, rounds, [&]() {
         for (std::size_t i = 0; i < Batch<N>::count; ++i) {
-            sink ^= zfactor::mpn::add<N>(out[i].data(), batch.a[i].data(), batch.b[i].data());
+            sink ^= zfactor::fixint::mpn::add<N>(out[i].data(), batch.a[i].data(), batch.b[i].data());
             escape(out[i]);
         }
     });
@@ -106,7 +89,7 @@ Stats bench_sub(const Batch<N>& batch, std::size_t rounds) {
     volatile limb_t sink = 0;
     auto stats = run_bench(Batch<N>::count, rounds, [&]() {
         for (std::size_t i = 0; i < Batch<N>::count; ++i) {
-            sink ^= zfactor::mpn::sub<N>(out[i].data(), batch.a[i].data(), batch.b[i].data());
+            sink ^= zfactor::fixint::mpn::sub<N>(out[i].data(), batch.a[i].data(), batch.b[i].data());
             escape(out[i]);
         }
     });
@@ -120,7 +103,7 @@ Stats bench_addmul1(const Batch<N>& batch, std::size_t rounds) {
     volatile limb_t sink = 0;
     auto stats = run_bench(Batch<N>::count, rounds, [&]() {
         for (std::size_t i = 0; i < Batch<N>::count; ++i) {
-            sink ^= zfactor::mpn::addmul1<N>(out[i].data(), batch.a[i].data(), batch.scalar[i]);
+            sink ^= zfactor::fixint::mpn::addmul1<N>(out[i].data(), batch.a[i].data(), batch.scalar[i]);
             escape(out[i]);
         }
     });
@@ -133,7 +116,7 @@ Stats bench_mul(const Batch<N>& batch, std::size_t rounds) {
     std::array<Arr2<N>, Batch<N>::count> out{};
     auto stats = run_bench(Batch<N>::count, rounds, [&]() {
         for (std::size_t i = 0; i < Batch<N>::count; ++i) {
-            zfactor::mpn::mul<N>(out[i].data(), batch.a[i].data(), batch.b[i].data());
+            zfactor::fixint::mpn::mul<N>(out[i].data(), batch.a[i].data(), batch.b[i].data());
             escape(out[i]);
         }
     });
@@ -145,7 +128,7 @@ Stats bench_sqr(const Batch<N>& batch, std::size_t rounds) {
     std::array<Arr2<N>, Batch<N>::count> out{};
     auto stats = run_bench(Batch<N>::count, rounds, [&]() {
         for (std::size_t i = 0; i < Batch<N>::count; ++i) {
-            zfactor::mpn::sqr<N>(out[i].data(), batch.a[i].data());
+            zfactor::fixint::mpn::sqr<N>(out[i].data(), batch.a[i].data());
             escape(out[i]);
         }
     });
@@ -157,7 +140,7 @@ Stats bench_cmp(const Batch<N>& batch, std::size_t rounds) {
     volatile int sink = 0;
     auto stats = run_bench(Batch<N>::count, rounds, [&]() {
         for (std::size_t i = 0; i < Batch<N>::count; ++i) {
-            sink ^= zfactor::mpn::cmp<N>(batch.a[i].data(), batch.b[i].data());
+            sink ^= zfactor::fixint::mpn::cmp<N>(batch.a[i].data(), batch.b[i].data());
             compiler_barrier();
         }
     });
@@ -170,7 +153,7 @@ Stats bench_lshift(const Batch<N>& batch, std::size_t rounds) {
     std::array<Arr<N>, Batch<N>::count> out{};
     auto stats = run_bench(Batch<N>::count, rounds, [&]() {
         for (std::size_t i = 0; i < Batch<N>::count; ++i) {
-            zfactor::mpn::lshift<N>(out[i].data(), batch.a[i].data(), batch.shift[i]);
+            zfactor::fixint::mpn::lshift<N>(out[i].data(), batch.a[i].data(), batch.shift[i]);
             escape(out[i]);
         }
     });
@@ -182,7 +165,7 @@ Stats bench_rshift(const Batch<N>& batch, std::size_t rounds) {
     std::array<Arr<N>, Batch<N>::count> out{};
     auto stats = run_bench(Batch<N>::count, rounds, [&]() {
         for (std::size_t i = 0; i < Batch<N>::count; ++i) {
-            zfactor::mpn::rshift<N>(out[i].data(), batch.a[i].data(), batch.shift[i]);
+            zfactor::fixint::mpn::rshift<N>(out[i].data(), batch.a[i].data(), batch.shift[i]);
             escape(out[i]);
         }
     });
@@ -302,30 +285,48 @@ inline void print_stats(const char* op, int n, const Stats& zf) {
     std::printf("%-8s N=%-2d  %8.3f ns/item  %8.2f Mop/s", op, n, zf.ns_per_item, zf.mops);
 }
 
+inline int selected_n() {
+    if (const char* value = std::getenv("ZFACTOR_BENCH_ONLY_N"))
+        return std::atoi(value);
+    return 0;
+}
+
+inline const char* selected_op() {
+    return std::getenv("ZFACTOR_BENCH_ONLY_OP");
+}
+
+inline bool want_op(const char* op) {
+    const char* only_op = selected_op();
+    return only_op == nullptr || std::strcmp(only_op, op) == 0;
+}
+
 template<int N>
 void bench_family() {
     Batch<N> batch;
-    std::size_t light = 4000;
-    std::size_t heavy = 1200;
+    // Use million-scale rounds so WSL scheduling noise does not dominate.
+    constexpr std::size_t light = 40'000;
+    constexpr std::size_t heavy = 12'000;
 
-    auto add = bench_add<N>(batch, light);
-    auto sub = bench_sub<N>(batch, light);
-    auto addmul1 = bench_addmul1<N>(batch, light);
-    auto mul = bench_mul<N>(batch, heavy);
-    auto sqr = bench_sqr<N>(batch, heavy);
-    auto cmp = bench_cmp<N>(batch, light);
-    auto lshift = bench_lshift<N>(batch, light);
-    auto rshift = bench_rshift<N>(batch, light);
+    Stats add{}, sub{}, addmul1{}, mul{}, sqr{}, cmp{}, lshift{}, rshift{};
+    if (want_op("add")) add = bench_add<N>(batch, light);
+    if (want_op("sub")) sub = bench_sub<N>(batch, light);
+    if (want_op("addmul1")) addmul1 = bench_addmul1<N>(batch, light);
+    if (want_op("mul")) mul = bench_mul<N>(batch, heavy);
+    if (want_op("sqr")) sqr = bench_sqr<N>(batch, heavy);
+    if (want_op("cmp")) cmp = bench_cmp<N>(batch, light);
+    if (want_op("lshift")) lshift = bench_lshift<N>(batch, light);
+    if (want_op("rshift")) rshift = bench_rshift<N>(batch, light);
 
 #ifdef ZFACTOR_BENCH_GMP
-    auto gadd = gmp_add<N>(batch, light);
-    auto gsub = gmp_sub<N>(batch, light);
-    auto gaddmul1 = gmp_addmul1<N>(batch, light);
-    auto gmul = gmp_mul<N>(batch, heavy);
-    auto gsqr = gmp_sqr<N>(batch, heavy);
-    auto gcmp = gmp_cmp<N>(batch, light);
-    auto glshift = gmp_lshift<N>(batch, light);
-    auto grshift = gmp_rshift<N>(batch, light);
+    Stats gadd{}, gsub{}, gaddmul1{}, gmul{}, gsqr{}, gcmp{}, glshift{}, grshift{};
+    if (want_op("add")) gadd = gmp_add<N>(batch, light);
+    if (want_op("sub")) gsub = gmp_sub<N>(batch, light);
+    if (want_op("addmul1")) gaddmul1 = gmp_addmul1<N>(batch, light);
+    if (want_op("mul")) gmul = gmp_mul<N>(batch, heavy);
+    if (want_op("sqr")) gsqr = gmp_sqr<N>(batch, heavy);
+    if (want_op("cmp")) gcmp = gmp_cmp<N>(batch, light);
+    if (want_op("lshift")) glshift = gmp_lshift<N>(batch, light);
+    if (want_op("rshift")) grshift = gmp_rshift<N>(batch, light);
 #endif
 
     auto print_one = [&](const char* op, const Stats& mine
@@ -333,6 +334,8 @@ void bench_family() {
         , const Stats& gmp
 #endif
     ) {
+        if (!want_op(op))
+            return;
         print_stats(op, N, mine);
 #ifdef ZFACTOR_BENCH_GMP
         std::printf("  GMP %8.3f ns/item  ratio %.3fx", gmp.ns_per_item, mine.ns_per_item / gmp.ns_per_item);
@@ -383,9 +386,16 @@ void bench_family() {
     std::printf("\n");
 }
 
+template<int N>
+void maybe_bench_family() {
+    int only_n = selected_n();
+    if (only_n == 0 || only_n == N)
+        bench_family<N>();
+}
+
 extern "C" ZFACTOR_USED ZFACTOR_NOINLINE
 std::uint64_t zfactor_codegen_add4(std::uint64_t* r, const std::uint64_t* a, const std::uint64_t* b) {
-    return zfactor::mpn::add<4>(r, a, b);
+    return zfactor::fixint::mpn::add<4>(r, a, b);
 }
 
 } // namespace
@@ -395,12 +405,14 @@ int main() {
     static_assert(sizeof(mp_limb_t) == sizeof(limb_t));
 #endif
 
-    std::puts("== zfactor mpn benchmark ==");
-    bench_family<1>();
-    bench_family<2>();
-    bench_family<4>();
-    bench_family<6>();
-    bench_family<8>();
-    bench_family<16>();
+    std::puts("== zfactor fixint benchmark ==");
+    maybe_bench_family<1>();
+    maybe_bench_family<2>();
+    maybe_bench_family<3>();
+    maybe_bench_family<4>();
+    maybe_bench_family<6>();
+    maybe_bench_family<8>();
+    maybe_bench_family<12>();
+    maybe_bench_family<16>();
     return 0;
 }
