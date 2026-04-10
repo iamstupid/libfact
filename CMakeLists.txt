@@ -60,7 +60,8 @@ target_include_directories(zfactor_fixint INTERFACE
     "${CMAKE_CURRENT_SOURCE_DIR}/third_party")
 if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64|amd64")
     add_library(zfactor_fixint_backend STATIC
-        src/fixint/sqr_diag_addlsh1_x86_64.S)
+        src/fixint/sqr_diag_addlsh1_x86_64.S
+        src/fixint/montmul_x86_64.S)
     target_compile_options(zfactor_fixint_backend PRIVATE -march=native)
     target_link_libraries(zfactor_fixint INTERFACE zfactor_fixint_backend)
 endif()
@@ -70,6 +71,10 @@ endif()
 if(ZFACTOR_CPU_HAS_ADX)
     target_compile_definitions(zfactor_fixint INTERFACE ZFACTOR_HAS_ADX=1)
 endif()
+if(ZFACTOR_CPU_HAS_BMI2 AND ZFACTOR_CPU_HAS_ADX)
+    target_compile_definitions(zfactor_fixint INTERFACE ZFACTOR_HAS_MONTMUL_IR=1)
+endif()
+
 
 function(zfactor_apply_common_flags target)
     target_compile_options(${target} PRIVATE -Wall -Wextra -Wpedantic -march=native)
@@ -102,12 +107,26 @@ if(ZFACTOR_BUILD_TESTS)
     target_link_libraries(test_uint PRIVATE zfactor_fixint)
     zfactor_apply_common_flags(test_uint)
     add_test(NAME uint COMMAND test_uint)
+
+    add_executable(test_montgomery tests/fixint/test_montgomery.cpp)
+    target_link_libraries(test_montgomery PRIVATE zfactor_fixint)
+    zfactor_apply_common_flags(test_montgomery)
+    add_test(NAME montgomery COMMAND test_montgomery)
+
+    add_executable(test_millerrabin tests/fixint/test_millerrabin.cpp)
+    target_link_libraries(test_millerrabin PRIVATE zfactor_fixint)
+    zfactor_apply_common_flags(test_millerrabin)
+    add_test(NAME millerrabin COMMAND test_millerrabin)
 endif()
 
 if(ZFACTOR_BUILD_BENCHMARKS)
     add_executable(bench_uint bench/fixint/bench_uint.cpp)
     target_link_libraries(bench_uint PRIVATE zfactor_fixint)
     zfactor_apply_common_flags(bench_uint)
+
+    add_executable(bench_montgomery bench/fixint/bench_montgomery.cpp)
+    target_link_libraries(bench_montgomery PRIVATE zfactor_fixint)
+    zfactor_apply_common_flags(bench_montgomery)
 
     if(ZFACTOR_BENCH_GMP)
         find_path(ZFACTOR_GMP_INCLUDE_DIR gmp.h

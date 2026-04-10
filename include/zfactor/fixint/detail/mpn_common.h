@@ -431,6 +431,26 @@ inline void bitnot_impl(limb_t* r, const limb_t* a) {
     }
 }
 
+// Branchless conditional subtract: r = (a >= b) ? a - b : a
+template<int N>
+inline void csub(limb_t* r, const limb_t* a, const limb_t* b) {
+    limb_t tmp[N];
+    limb_t bw = sub<N>(tmp, a, b);
+    limb_t mask = -bw;
+    for (int i = 0; i < N; ++i)
+        r[i] = (a[i] & mask) | (tmp[i] & ~mask);
+}
+
+// Branchless conditional add: r = a + (flag ? b : 0)
+template<int N>
+inline void cadd(limb_t* r, const limb_t* a, const limb_t* b, limb_t flag) {
+    limb_t mask = -flag;
+    limb_t masked[N];
+    for (int i = 0; i < N; ++i)
+        masked[i] = b[i] & mask;
+    add<N>(r, a, masked);
+}
+
 template<int N, int I>
 inline void sqr_cross_terms(limb_t* tp, const limb_t* a) {
     if constexpr (I == 0) {
@@ -537,6 +557,22 @@ inline void mul_rows(limb_t* r, const limb_t* a, const limb_t* b) {
         r[J + N] = addmul1<N>(r + J, a, b[J]);
         mul_rows<N, J + 1>(r, a, b);
     }
+}
+
+// Low-half multiply: r[0..N-1] = (a * b) mod 2^(64N)
+// ~N²/2 multiplications — only computes limbs that contribute to positions 0..N-1.
+template<int N, int J>
+inline void mullow_rows(limb_t* r, const limb_t* a, const limb_t* b) {
+    if constexpr (J < N) {
+        addmul1<N - J>(r + J, a, b[J]);
+        mullow_rows<N, J + 1>(r, a, b);
+    }
+}
+
+template<int N>
+inline void mullow(limb_t* r, const limb_t* a, const limb_t* b) {
+    set_zero<N>(r);
+    mullow_rows<N, 0>(r, a, b);
 }
 
 template<int N>

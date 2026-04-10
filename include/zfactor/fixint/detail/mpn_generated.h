@@ -33,6 +33,11 @@ __attribute__((always_inline)) inline limb_t addmul1_block(limb_t* r, const limb
     return generic_addmul1_block<B>(r, a, scalar, cy);
 }
 
+template<int B>
+__attribute__((always_inline)) inline limb_t submul1_block(limb_t* r, const limb_t* a, limb_t scalar, limb_t bw) {
+    return generic_submul1_block<B>(r, a, scalar, bw);
+}
+
 template<int N>
 __attribute__((always_inline)) inline bool sqr_small_asm(limb_t* r, const limb_t* a) {
     (void)r;
@@ -2133,6 +2138,21 @@ __attribute__((always_inline)) inline uint8_t sub(limb_t* r, const limb_t* a, co
 template<int N>
 __attribute__((always_inline)) inline limb_t addmul1(limb_t* r, const limb_t* a, limb_t b) {
     return addmul1_chunked<N, 8>(r, a, b, 0);
+}
+
+template<int N, int B>
+__attribute__((always_inline)) inline limb_t submul1_chunked(limb_t* r, const limb_t* a, limb_t b, limb_t bw) {
+    if constexpr (N <= B) {
+        return submul1_block<N>(r, a, b, bw);
+    } else {
+        bw = submul1_block<B>(r, a, b, bw);
+        return submul1_chunked<N - B, B>(r + B, a + B, b, bw);
+    }
+}
+
+template<int N>
+__attribute__((always_inline)) inline limb_t submul1(limb_t* r, const limb_t* a, limb_t b) {
+    return submul1_chunked<N, 4>(r, a, b, 0);
 }
 
 } // namespace zfactor::fixint::mpn

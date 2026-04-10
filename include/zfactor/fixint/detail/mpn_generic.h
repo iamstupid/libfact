@@ -35,6 +35,9 @@ template<int N>
 inline limb_t addmul1(limb_t* r, const limb_t* a, limb_t b);
 
 template<int N>
+inline limb_t submul1(limb_t* r, const limb_t* a, limb_t b);
+
+template<int N>
 inline bool sqr_small_asm(limb_t* r, const limb_t* a);
 
 template<int N>
@@ -76,6 +79,18 @@ inline limb_t generic_addmul1_block(limb_t* r, const limb_t* a, limb_t b, limb_t
 }
 
 template<int N>
+inline limb_t generic_submul1_block(limb_t* r, const limb_t* a, limb_t b, limb_t bw) {
+    for (int i = 0; i < N; ++i) {
+        unsigned __int128 prod = (unsigned __int128)a[i] * b + bw;
+        limb_t lo = (limb_t)prod;
+        limb_t hi = (limb_t)(prod >> 64);
+        bw = hi + (r[i] < lo);
+        r[i] -= lo;
+    }
+    return bw;
+}
+
+template<int N>
 inline uint8_t generic_add(limb_t* r, const limb_t* a, const limb_t* b) {
     return generic_add_block<N>(r, a, b, 0);
 }
@@ -88,6 +103,11 @@ inline uint8_t generic_sub(limb_t* r, const limb_t* a, const limb_t* b) {
 template<int N>
 inline limb_t generic_addmul1(limb_t* r, const limb_t* a, limb_t b) {
     return generic_addmul1_block<N>(r, a, b, 0);
+}
+
+template<int N>
+inline limb_t generic_submul1(limb_t* r, const limb_t* a, limb_t b) {
+    return generic_submul1_block<N>(r, a, b, 0);
 }
 
 #ifndef ZFACTOR_MPN_DECLARE_ONLY
@@ -104,6 +124,11 @@ inline uint8_t sub(limb_t* r, const limb_t* a, const limb_t* b) {
 template<int N>
 inline limb_t addmul1(limb_t* r, const limb_t* a, limb_t b) {
     return generic_addmul1<N>(r, a, b);
+}
+
+template<int N>
+inline limb_t submul1(limb_t* r, const limb_t* a, limb_t b) {
+    return generic_submul1<N>(r, a, b);
 }
 
 #endif
