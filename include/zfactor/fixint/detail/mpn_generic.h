@@ -29,13 +29,38 @@ template<int N>
 inline uint8_t add(limb_t* r, const limb_t* a, const limb_t* b);
 
 template<int N>
+inline uint8_t addc(limb_t* r, const limb_t* a, const limb_t* b, uint8_t cy);
+
+template<int N>
 inline uint8_t sub(limb_t* r, const limb_t* a, const limb_t* b);
+
+template<int N>
+inline uint8_t subc(limb_t* r, const limb_t* a, const limb_t* b, uint8_t bw);
 
 template<int N>
 inline limb_t addmul1(limb_t* r, const limb_t* a, limb_t b);
 
 template<int N>
 inline limb_t submul1(limb_t* r, const limb_t* a, limb_t b);
+
+// Single-limb add/sub: r = a +/- b (b is a single limb).
+// Primary template provides the generic chain; gen_mpn.py emits ASM
+// specializations for N=1..8 (visible after this header is included).
+template<int N>
+inline uint8_t add1(limb_t* r, const limb_t* a, limb_t b) {
+    uint8_t cy = addcarry(0, a[0], b, r);
+    for (int i = 1; i < N; ++i)
+        cy = addcarry(cy, a[i], 0, r + i);
+    return cy;
+}
+
+template<int N>
+inline uint8_t sub1(limb_t* r, const limb_t* a, limb_t b) {
+    uint8_t bw = subborrow(0, a[0], b, r);
+    for (int i = 1; i < N; ++i)
+        bw = subborrow(bw, a[i], 0, r + i);
+    return bw;
+}
 
 template<int N>
 inline bool sqr_small_asm(limb_t* r, const limb_t* a);
@@ -117,8 +142,18 @@ inline uint8_t add(limb_t* r, const limb_t* a, const limb_t* b) {
 }
 
 template<int N>
+inline uint8_t addc(limb_t* r, const limb_t* a, const limb_t* b, uint8_t cy) {
+    return generic_add_block<N>(r, a, b, cy);
+}
+
+template<int N>
 inline uint8_t sub(limb_t* r, const limb_t* a, const limb_t* b) {
     return generic_sub<N>(r, a, b);
+}
+
+template<int N>
+inline uint8_t subc(limb_t* r, const limb_t* a, const limb_t* b, uint8_t bw) {
+    return generic_sub_block<N>(r, a, b, bw);
 }
 
 template<int N>

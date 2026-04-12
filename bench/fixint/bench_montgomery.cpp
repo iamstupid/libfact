@@ -220,7 +220,9 @@ int main() {
     bench_family<2>();
     bench_family<3>();
     bench_family<4>();
+    bench_family<5>();
     bench_family<6>();
+    bench_family<7>();
     bench_family<8>();
     return 0;
 }

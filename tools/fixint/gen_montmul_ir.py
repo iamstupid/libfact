@@ -18,6 +18,23 @@ declare void @llvm.memset.p0.i64(ptr, i8, i64, i1)
 """
 
 
+def usub_overflow_decls(max_n: int) -> str:
+    """Declare llvm.usub.with.overflow at every width we use.
+
+    The conditional subtract at the end of each montmul wants the borrow
+    that comes out of the same subtraction operation — declaring the
+    overloaded intrinsic explicitly makes LLVM fold the icmp+sub into
+    one chain instead of computing them as two parallel chains.
+    """
+    lines = []
+    for n in range(1, max_n + 1):
+        nb = bits(n)
+        lines.append(
+            f"declare {{i{nb}, i1}} @llvm.usub.with.overflow.i{nb}(i{nb}, i{nb})"
+        )
+    return "\n".join(lines)
+
+
 def bits(n: int) -> int:
     return 64 * n
 
@@ -25,6 +42,91 @@ def bits(n: int) -> int:
 def wide_bits(n: int) -> int:
     """Accumulator width: enough for N-limb * 1-limb + N-limb + carry = N+1 limbs."""
     return 64 * (n + 1)
+
+
+def emit_cond_subtract(
+    n: int,
+    result_val: str,        # name of the i{nb} result value
+    mod_val: str,           # name of the i{nb} mod value
+    overflow_val: str,      # name of the i64 overflow value (0 / nonzero)
+    result_limb_names: list,  # list of N i64 SSA names that compose result_val
+                              # (used to feed the per-limb select); for the unrolled
+                              # paths where we only have the i{nb}, pass None and
+                              # we'll trunc/lshr it back into limbs.
+) -> str:
+    """Emit the final 'reduce mod' step.
+
+    Two improvements over the naive `select i{nb}` pattern:
+
+      1. Use llvm.usub.with.overflow.i{nb} so the trial subtract and the
+         borrow flag come from the same instruction chain.  Stops LLVM from
+         computing a separate i{nb} icmp+sbb chain in parallel.
+
+      2. Split the i{nb} select into N independent i64 selects all
+         conditioned on the same i1.  Sidesteps LLVM's lexicographic-tree
+         lowering of `select i{nb}` for non-legal wide integer types,
+         which on i192 collapses to three serial cmp+cmov groups
+         (~10 cycles of cmov chain) instead of one parallel cmov set.
+    """
+    nb = bits(n)
+    lines = []
+
+    # Trial subtract: produces sub + borrow as one chain.
+    lines.append(
+        f"  %sub_pair = call {{i{nb}, i1}} "
+        f"@llvm.usub.with.overflow.i{nb}(i{nb} {result_val}, i{nb} {mod_val})"
+    )
+    lines.append(f"  %sub = extractvalue {{i{nb}, i1}} %sub_pair, 0")
+    lines.append(f"  %borrow = extractvalue {{i{nb}, i1}} %sub_pair, 1")
+    lines.append(f"  %no_ov = icmp eq i64 {overflow_val}, 0")
+    lines.append(f"  %need_undo = and i1 %no_ov, %borrow")
+
+    # Split sub into N i64 limbs.  For N=1, %sub is already i64 — skip
+    # the no-op trunc.
+    if n == 1:
+        sub_limbs = ["%sub"]
+    else:
+        for j in range(n):
+            if j == 0:
+                lines.append(f"  %sub_lo0 = trunc i{nb} %sub to i64")
+            else:
+                lines.append(f"  %sub_sh{j} = lshr i{nb} %sub, {j * 64}")
+                lines.append(f"  %sub_lo{j} = trunc i{nb} %sub_sh{j} to i64")
+        sub_limbs = [f"%sub_lo{j}" for j in range(n)]
+
+    # Get the result limbs.  If caller passed them in directly we use them;
+    # otherwise we trunc/lshr the i{nb} result value into limbs.
+    if result_limb_names is None:
+        if n == 1:
+            result_limbs = [result_val]
+        else:
+            for j in range(n):
+                if j == 0:
+                    lines.append(f"  %res_lo0 = trunc i{nb} {result_val} to i64")
+                else:
+                    lines.append(f"  %res_sh{j} = lshr i{nb} {result_val}, {j * 64}")
+                    lines.append(f"  %res_lo{j} = trunc i{nb} %res_sh{j} to i64")
+            result_limbs = [f"%res_lo{j}" for j in range(n)]
+    else:
+        result_limbs = result_limb_names
+
+    # N independent i64 selects, all on %need_undo — guarantees N parallel
+    # cmovs at the asm level (one cycle each, no inter-limb dependency).
+    for j in range(n):
+        lines.append(
+            f"  %out{j} = select i1 %need_undo, "
+            f"i64 {result_limbs[j]}, i64 {sub_limbs[j]}"
+        )
+
+    # Store each limb to %r individually.
+    for j in range(n):
+        if j == 0:
+            lines.append(f"  store i64 %out0, ptr %r, align 8")
+        else:
+            lines.append(f"  %r{j}_ptr = getelementptr i64, ptr %r, i64 {j}")
+            lines.append(f"  store i64 %out{j}, ptr %r{j}_ptr, align 8")
+
+    return "\n".join(lines)
 
 
 def emit_unrolled_montmul(n: int) -> str:
@@ -84,13 +186,8 @@ def emit_unrolled_montmul(n: int) -> str:
     lines.append(f"  %t_hi = lshr i{tb} %{t_cur}, {nb}")
     lines.append(f"  %overflow = trunc i{tb} %t_hi to i64")
 
-    # Conditional subtract: if overflow or result >= mod, subtract mod
-    lines.append(f"  %sub = sub i{nb} %result, %mod")
-    lines.append(f"  %borrow = icmp ugt i{nb} %mod, %result")  # borrow if mod > result
-    lines.append(f"  %no_overflow = icmp eq i64 %overflow, 0")
-    lines.append(f"  %need_undo = and i1 %no_overflow, %borrow")
-    lines.append(f"  %final = select i1 %need_undo, i{nb} %result, i{nb} %sub")
-    lines.append(f"  store i{nb} %final, ptr %r, align 8")
+    # Conditional subtract via the shared helper.
+    lines.append(emit_cond_subtract(n, "%result", "%mod", "%overflow", None))
     lines.append("  ret void")
     lines.append("}")
     return "\n".join(lines)
@@ -189,13 +286,8 @@ def emit_looped_montmul(n: int) -> str:
     lines.append(f"  %ov_ptr = getelementptr i64, ptr %t, i64 {2 * n}")
     lines.append(f"  %overflow = load i64, ptr %ov_ptr, align 8")
 
-    # Conditional subtract
-    lines.append(f"  %sub = sub i{nb} %result, %mod")
-    lines.append(f"  %borrow = icmp ugt i{nb} %mod, %result")
-    lines.append(f"  %no_ov = icmp eq i64 %overflow, 0")
-    lines.append(f"  %need_undo = and i1 %no_ov, %borrow")
-    lines.append(f"  %final = select i1 %need_undo, i{nb} %result, i{nb} %sub")
-    lines.append(f"  store i{nb} %final, ptr %r, align 8")
+    # Conditional subtract via the shared helper.
+    lines.append(emit_cond_subtract(n, "%result", "%mod", "%overflow", None))
     lines.append("  ret void")
     lines.append("}")
     return "\n".join(lines)
@@ -323,8 +415,14 @@ def emit_cios_montmul(n: int) -> str:
         t[pos_n + 1] = new_tn1
 
     # Result: t[N..2N-1], overflow = t[2N]
-    # Conditional subtract
-    # Assemble result as iNB
+    #
+    # We still need to assemble the i{nb} `result` and `mod_full` values
+    # for the trial subtract — that's the only thing the usub.with.overflow
+    # intrinsic operates on at width nb.  But we keep the per-limb i64
+    # SSA names (`result_limbs`) so the per-limb selects in the helper
+    # don't have to trunc/lshr them back out.
+    result_limbs = [t[n + j] for j in range(n)]
+
     result_parts = []
     for j in range(n):
         w = f"%res_w{j}"
@@ -335,8 +433,6 @@ def emit_cios_montmul(n: int) -> str:
             result_parts.append(sh)
         else:
             result_parts.append(w)
-
-    # OR them together
     cur = result_parts[0]
     for j in range(1, n):
         nxt = f"%res_or{j}"
@@ -344,7 +440,6 @@ def emit_cios_montmul(n: int) -> str:
         cur = nxt
     result = cur
 
-    # Assemble mod as iNB
     mod_parts = []
     for j in range(n):
         w = f"%modf_w{j}"
@@ -364,19 +459,195 @@ def emit_cios_montmul(n: int) -> str:
 
     overflow = t[2 * n]
 
-    lines.append(f"  %sub = sub i{nb} {result}, {mod_full}")
-    lines.append(f"  %borrow = icmp ugt i{nb} {mod_full}, {result}")
-    lines.append(f"  %no_ov = icmp eq i64 {overflow}, 0")
-    lines.append(f"  %need_undo = and i1 %no_ov, %borrow")
-    lines.append(f"  %final = select i1 %need_undo, i{nb} {result}, i{nb} %sub")
-    lines.append(f"  store i{nb} %final, ptr %r, align 8")
+    # Conditional subtract via the shared helper, passing the per-limb
+    # SSA names so the per-limb selects don't re-extract them.
+    lines.append(emit_cond_subtract(n, result, mod_full, overflow, result_limbs))
     lines.append("  ret void")
     lines.append("}")
     return "\n".join(lines)
 
 
+def emit_cios_montmul_cpp(n: int) -> str:
+    """Emit a fully-unrolled inline C++ montmul for a specific N (3-8).
+
+    Mirrors emit_cios_montmul but emits C++ with __int128 and named locals
+    instead of LLVM IR.  Each "t[pos]" slot is a separately-named uint64_t
+    local, so clang can keep them in registers — the templated montmul_cios
+    using `mp_limb_t t[2*N+1]` couldn't, because the array decays to stack.
+
+    Marked [[gnu::always_inline]] so callers see it as a transparent body.
+    """
+    lines = []
+    fname = f"montmul_inline_{n}"
+    lines.append(
+        f"[[gnu::always_inline]] inline void {fname}("
+        f"std::uint64_t* __restrict r,"
+        f" const std::uint64_t* __restrict a,"
+        f" const std::uint64_t* __restrict b,"
+        f" const std::uint64_t* __restrict mod,"
+        f" std::uint64_t inv) {{"
+    )
+    lines.append("    using u128 = unsigned __int128;")
+
+    # Load a, mod into named locals.
+    for j in range(n):
+        lines.append(f"    std::uint64_t a{j} = a[{j}];")
+        lines.append(f"    std::uint64_t mod{j} = mod[{j}];")
+
+    # All t slots start as 0; we use named locals so they stay in SSA/register.
+    t = {j: "0" for j in range(2 * n + 1)}
+    name_counter = [0]
+
+    def fresh(prefix: str) -> str:
+        name_counter[0] += 1
+        return f"{prefix}_{name_counter[0]}"
+
+    for i in range(n):
+        lines.append(f"    // === CIOS iteration i={i} ===")
+        lines.append(f"    std::uint64_t b{i} = b[{i}];")
+
+        # Phase 1: t[i..i+N-1] += a * b[i]
+        carry = "0"
+        for j in range(n):
+            pos = i + j
+            acc = fresh("acc_a")
+            lines.append(
+                f"    u128 {acc} = (u128)a{j} * b{i} + {t[pos]} + {carry};"
+            )
+            new_t = fresh("t_a")
+            lines.append(f"    std::uint64_t {new_t} = (std::uint64_t){acc};")
+            new_cy = fresh("cy_a")
+            lines.append(
+                f"    std::uint64_t {new_cy} = (std::uint64_t)({acc} >> 64);"
+            )
+            t[pos] = new_t
+            carry = new_cy
+
+        # Propagate the final carry into t[i+N], t[i+N+1].
+        pos_n = i + n
+        new_tn = fresh("prop_a")
+        lines.append(f"    std::uint64_t {new_tn} = {t[pos_n]} + {carry};")
+        ov = fresh("ov_a")
+        lines.append(
+            f"    std::uint64_t {ov} = ({new_tn} < {carry}) ? 1 : 0;"
+        )
+        new_tn1 = fresh("t_a_high")
+        lines.append(f"    std::uint64_t {new_tn1} = {t[pos_n + 1]} + {ov};")
+        t[pos_n] = new_tn
+        t[pos_n + 1] = new_tn1
+
+        # Phase 2: m = t[i] * inv
+        m_name = f"m{i}"
+        lines.append(f"    std::uint64_t {m_name} = {t[i]} * inv;")
+
+        # Phase 3: t[i..i+N-1] += mod * m
+        carry = "0"
+        for j in range(n):
+            pos = i + j
+            acc = fresh("acc_m")
+            lines.append(
+                f"    u128 {acc} = (u128)mod{j} * {m_name} + {t[pos]} + {carry};"
+            )
+            new_t = fresh("t_m")
+            lines.append(f"    std::uint64_t {new_t} = (std::uint64_t){acc};")
+            new_cy = fresh("cy_m")
+            lines.append(
+                f"    std::uint64_t {new_cy} = (std::uint64_t)({acc} >> 64);"
+            )
+            t[pos] = new_t
+            carry = new_cy
+
+        # Propagate the m-phase carry.
+        pos_n = i + n
+        new_tn = fresh("prop_m")
+        lines.append(f"    std::uint64_t {new_tn} = {t[pos_n]} + {carry};")
+        ov = fresh("ov_m")
+        lines.append(
+            f"    std::uint64_t {ov} = ({new_tn} < {carry}) ? 1 : 0;"
+        )
+        new_tn1 = fresh("t_m_high")
+        lines.append(f"    std::uint64_t {new_tn1} = {t[pos_n + 1]} + {ov};")
+        t[pos_n] = new_tn
+        t[pos_n + 1] = new_tn1
+
+    # === Conditional reduce ===
+    # Result is t[N..2N-1]; overflow is t[2N].
+    overflow = t[2 * n]
+    result_locals = [t[n + j] for j in range(n)]
+
+    lines.append(f"    // === Conditional reduce ===")
+    # Trial subtract limb by limb with explicit borrow chain.
+    lines.append(f"    std::uint64_t sub_borrow = 0;")
+    sub_locals = []
+    for j in range(n):
+        sub_v = fresh("sub")
+        lines.append(
+            f"    std::uint64_t {sub_v};"
+        )
+        # Use __builtin_sub_overflow chained: sub_v = result - mod - sub_borrow
+        lines.append(
+            f"    {{"
+        )
+        lines.append(
+            f"        unsigned long long _diff;"
+        )
+        lines.append(
+            f"        unsigned long long _b1 = "
+            f"__builtin_sub_overflow({result_locals[j]}, mod{j}, &_diff);"
+        )
+        lines.append(
+            f"        unsigned long long _b2 = "
+            f"__builtin_sub_overflow(_diff, sub_borrow, &_diff);"
+        )
+        lines.append(f"        {sub_v} = _diff;")
+        lines.append(f"        sub_borrow = _b1 | _b2;")
+        lines.append(f"    }}")
+        sub_locals.append(sub_v)
+
+    # need_undo = (overflow == 0) && sub_borrow
+    # Equivalently: use the sub if (overflow != 0) || !sub_borrow
+    lines.append(
+        f"    bool use_sub = ({overflow} != 0) | (sub_borrow == 0);"
+    )
+
+    # Per-limb selects via ternary — clang lowers each as a parallel cmov on
+    # the same flag.
+    for j in range(n):
+        lines.append(
+            f"    r[{j}] = use_sub ? {sub_locals[j]} : {result_locals[j]};"
+        )
+
+    lines.append("}")
+    return "\n".join(lines)
+
+
+def render_cpp(max_n: int) -> str:
+    parts = []
+    parts.append("// Generated by tools/fixint/gen_montmul_ir.py — do not edit.")
+    parts.append("// Inline C++ CIOS montmul kernels for N=3..8.")
+    parts.append("//")
+    parts.append("// Each function is fully unrolled with named locals so clang can")
+    parts.append("// keep the t[] state in SSA/registers (vs the stack-allocated")
+    parts.append("// montmul_cios template).  Marked always_inline so the body")
+    parts.append("// inlines into the calling montmul<N>() dispatch and pays no")
+    parts.append("// function-call overhead.")
+    parts.append("#pragma once")
+    parts.append("")
+    parts.append("#include <cstdint>")
+    parts.append("")
+    parts.append("namespace zfactor::fixint {")
+    parts.append("")
+    for n in range(3, max_n + 1):
+        parts.append(emit_cios_montmul_cpp(n))
+        parts.append("")
+    parts.append("}  // namespace zfactor::fixint")
+    return "\n".join(parts) + "\n"
+
+
 def render(max_n: int, cpu: str = "skylake") -> str:
     parts = [PREAMBLE]
+    parts.append(usub_overflow_decls(max_n))
+    parts.append("")
 
     # N=1-2: positive-inverse unrolled (fast for small N)
     for n in range(1, min(max_n, 2) + 1):
@@ -395,13 +666,23 @@ def render(max_n: int, cpu: str = "skylake") -> str:
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--output", required=True)
+    parser.add_argument("--output", required=False,
+                        help="Path to write the LLVM IR file.")
+    parser.add_argument("--output-cpp", required=False,
+                        help="Path to write the inline C++ header.")
     parser.add_argument("--max-n", type=int, default=8)
     args = parser.parse_args()
 
-    output = Path(args.output)
-    output.parent.mkdir(parents=True, exist_ok=True)
-    output.write_text(render(args.max_n), encoding="utf-8", newline="\n")
+    if args.output:
+        output = Path(args.output)
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_text(render(args.max_n), encoding="utf-8", newline="\n")
+    if args.output_cpp:
+        output_cpp = Path(args.output_cpp)
+        output_cpp.parent.mkdir(parents=True, exist_ok=True)
+        output_cpp.write_text(render_cpp(args.max_n), encoding="utf-8", newline="\n")
+    if not args.output and not args.output_cpp:
+        parser.error("must specify --output or --output-cpp (or both)")
 
 
 if __name__ == "__main__":

@@ -48,22 +48,6 @@ inline int cmp(const limb_t* a, const limb_t* b) {
 }
 
 template<int N>
-inline uint8_t add1(limb_t* r, const limb_t* a, limb_t b) {
-    uint8_t cy = addcarry(0, a[0], b, r);
-    for (int i = 1; i < N; ++i)
-        cy = addcarry(cy, a[i], 0, r + i);
-    return cy;
-}
-
-template<int N>
-inline uint8_t sub1(limb_t* r, const limb_t* a, limb_t b) {
-    uint8_t bw = subborrow(0, a[0], b, r);
-    for (int i = 1; i < N; ++i)
-        bw = subborrow(bw, a[i], 0, r + i);
-    return bw;
-}
-
-template<int N>
 inline uint8_t lshift1(limb_t* r, const limb_t* a) {
     uint8_t carry = 0;
     for (int i = 0; i < N; ++i) {
@@ -559,6 +543,21 @@ inline void mul_rows(limb_t* r, const limb_t* a, const limb_t* b) {
     }
 }
 
+// Non-square multiply: r[N+M] = a[N] * b[M], using addmul1<N>.
+template<int N, int M, int J>
+inline void mul_nm_rows(limb_t* r, const limb_t* a, const limb_t* b) {
+    if constexpr (J < M) {
+        r[J + N] = addmul1<N>(r + J, a, b[J]);
+        mul_nm_rows<N, M, J + 1>(r, a, b);
+    }
+}
+
+template<int N, int M>
+inline void mul_nm(limb_t* r, const limb_t* a, const limb_t* b) {
+    set_zero<N + M>(r);
+    mul_nm_rows<N, M, 0>(r, a, b);
+}
+
 // Low-half multiply: r[0..N-1] = (a * b) mod 2^(64N)
 // ~N²/2 multiplications — only computes limbs that contribute to positions 0..N-1.
 template<int N, int J>
@@ -592,6 +591,258 @@ inline void sqr(limb_t* r, const limb_t* a) {
             return;
     }
     sqr_impl<N>(r, a);
+}
+
+// ============================================================================
+// Runtime-n dispatchers for compile-time-N specializations.
+// Useful for code that operates on bounded but runtime-sized slices
+// (e.g., Lehmer GCD apply_matrix, basecase divrem).
+// ============================================================================
+
+inline limb_t addmul1_n(limb_t* r, const limb_t* a, limb_t b, int n) {
+    switch (n) {
+        case 1: return addmul1<1>(r, a, b);
+        case 2: return addmul1<2>(r, a, b);
+        case 3: return addmul1<3>(r, a, b);
+        case 4: return addmul1<4>(r, a, b);
+        case 5: return addmul1<5>(r, a, b);
+        case 6: return addmul1<6>(r, a, b);
+        case 7: return addmul1<7>(r, a, b);
+        case 8: return addmul1<8>(r, a, b);
+    }
+    limb_t cy = 0;
+    for (int i = 0; i < n; ++i) {
+        unsigned __int128 p = (unsigned __int128)a[i] * b + r[i] + cy;
+        r[i] = static_cast<limb_t>(p);
+        cy = static_cast<limb_t>(p >> 64);
+    }
+    return cy;
+}
+
+inline limb_t submul1_n(limb_t* r, const limb_t* a, limb_t b, int n) {
+    switch (n) {
+        case 1: return submul1<1>(r, a, b);
+        case 2: return submul1<2>(r, a, b);
+        case 3: return submul1<3>(r, a, b);
+        case 4: return submul1<4>(r, a, b);
+        case 5: return submul1<5>(r, a, b);
+        case 6: return submul1<6>(r, a, b);
+        case 7: return submul1<7>(r, a, b);
+        case 8: return submul1<8>(r, a, b);
+    }
+    limb_t bw = 0;
+    for (int i = 0; i < n; ++i) {
+        unsigned __int128 p = (unsigned __int128)a[i] * b + bw;
+        limb_t lo = static_cast<limb_t>(p);
+        bw = static_cast<limb_t>(p >> 64) + (r[i] < lo);
+        r[i] -= lo;
+    }
+    return bw;
+}
+
+inline uint8_t sub_n(limb_t* r, const limb_t* a, const limb_t* b, int n) {
+    switch (n) {
+        case 1: return sub<1>(r, a, b);
+        case 2: return sub<2>(r, a, b);
+        case 3: return sub<3>(r, a, b);
+        case 4: return sub<4>(r, a, b);
+        case 5: return sub<5>(r, a, b);
+        case 6: return sub<6>(r, a, b);
+        case 7: return sub<7>(r, a, b);
+        case 8: return sub<8>(r, a, b);
+    }
+    uint8_t bw = 0;
+    for (int i = 0; i < n; ++i)
+        bw = subborrow(bw, a[i], b[i], &r[i]);
+    return bw;
+}
+
+// ============================================================================
+// Schoolbook long division (Knuth Algorithm D)
+// u[0..N-1] / v[0..N-1] -> q[0..N-1], r[0..N-1]
+// Handles variable effective sizes internally.
+// ============================================================================
+
+namespace detail_div {
+
+// Core schoolbook divrem. Operates on u[0..un-1] / v[0..vn-1].
+// Writes quotient to q (caller zeros it, at least un-vn+1 limbs available)
+// and remainder to r (caller zeros it, at least vn limbs available).
+// MAXBUF: compile-time max limbs for stack buffers.
+template<int MAXBUF>
+inline void schoolbook_div(limb_t* q, limb_t* r,
+                           const limb_t* u_in, int un,
+                           const limb_t* v_in, int vn) {
+    // Trim leading zeros
+    while (un > 0 && u_in[un - 1] == 0) --un;
+    while (vn > 0 && v_in[vn - 1] == 0) --vn;
+
+    if (vn == 0 || un == 0) return;
+
+    // u < v → q=0, r=u
+    if (un < vn) {
+        for (int i = 0; i < un; ++i) r[i] = u_in[i];
+        return;
+    }
+    if (un == vn) {
+        for (int i = un - 1; i >= 0; --i) {
+            if (u_in[i] < v_in[i]) {
+                for (int j = 0; j < un; ++j) r[j] = u_in[j];
+                return;
+            }
+            if (u_in[i] > v_in[i]) break;
+        }
+    }
+
+    // Single-limb divisor: fast path
+    if (vn == 1) {
+        limb_t rem = 0;
+        for (int i = un - 1; i >= 0; --i) {
+            unsigned __int128 cur = ((unsigned __int128)rem << 64) | u_in[i];
+            q[i] = static_cast<limb_t>(cur / v_in[0]);
+            rem = static_cast<limb_t>(cur % v_in[0]);
+        }
+        r[0] = rem;
+        return;
+    }
+
+    // --- Knuth Algorithm D (vn >= 2) ---
+
+    // D1: Normalize
+    unsigned shift = static_cast<unsigned>(std::countl_zero(v_in[vn - 1]));
+
+    limb_t uu[MAXBUF + 1] = {};
+    limb_t vv[MAXBUF] = {};
+
+    if (shift > 0) {
+        for (int i = vn - 1; i > 0; --i)
+            vv[i] = (v_in[i] << shift) | (v_in[i - 1] >> (64 - shift));
+        vv[0] = v_in[0] << shift;
+
+        uu[un] = u_in[un - 1] >> (64 - shift);
+        for (int i = un - 1; i > 0; --i)
+            uu[i] = (u_in[i] << shift) | (u_in[i - 1] >> (64 - shift));
+        uu[0] = u_in[0] << shift;
+    } else {
+        for (int i = 0; i < vn; ++i) vv[i] = v_in[i];
+        for (int i = 0; i < un; ++i) uu[i] = u_in[i];
+    }
+
+    // D2-D6: Main loop
+    for (int j = un - vn; j >= 0; --j) {
+        // D3: Estimate q_hat
+        limb_t q_hat;
+        if (uu[j + vn] >= vv[vn - 1]) {
+            q_hat = UINT64_MAX;
+        } else {
+            unsigned __int128 num = ((unsigned __int128)uu[j + vn] << 64) | uu[j + vn - 1];
+            q_hat = static_cast<limb_t>(num / vv[vn - 1]);
+            limb_t r_hat = static_cast<limb_t>(num % vv[vn - 1]);
+
+            // Refine: at most 2 iterations
+            for (;;) {
+                unsigned __int128 lhs = (unsigned __int128)q_hat * vv[vn - 2];
+                unsigned __int128 rhs = ((unsigned __int128)r_hat << 64) | uu[j + vn - 2];
+                if (lhs <= rhs) break;
+                --q_hat;
+                r_hat += vv[vn - 1];
+                if (r_hat < vv[vn - 1]) break; // overflow → done
+            }
+        }
+
+        // D4: Multiply and subtract
+        // Compute prod = q_hat * vv (vn+1 limbs), then subtract from uu[j..j+vn]
+        limb_t prod[MAXBUF + 1] = {};
+        {
+            limb_t cy = 0;
+            for (int i = 0; i < vn; ++i) {
+                unsigned __int128 p = (unsigned __int128)q_hat * vv[i] + cy;
+                prod[i] = static_cast<limb_t>(p);
+                cy = static_cast<limb_t>(p >> 64);
+            }
+            prod[vn] = cy;
+        }
+
+        uint8_t bw = 0;
+        for (int i = 0; i <= vn; ++i)
+            bw = subborrow(bw, uu[j + i], prod[i], &uu[j + i]);
+
+        // D5: If oversubtracted, add back
+        if (bw) {
+            --q_hat;
+            uint8_t cy = 0;
+            for (int i = 0; i < vn; ++i)
+                cy = addcarry(cy, uu[j + i], vv[i], &uu[j + i]);
+            uu[j + vn] += cy;
+        }
+
+        // D6
+        q[j] = q_hat;
+    }
+
+    // D7: Unnormalize remainder
+    if (shift > 0) {
+        for (int i = 0; i < vn - 1; ++i)
+            r[i] = (uu[i] >> shift) | (uu[i + 1] << (64 - shift));
+        r[vn - 1] = uu[vn - 1] >> shift;
+    } else {
+        for (int i = 0; i < vn; ++i) r[i] = uu[i];
+    }
+}
+
+} // namespace detail_div
+
+#if defined(__x86_64__)
+extern "C" void zfactor_mg_divrem(
+    limb_t* qp, limb_t* rp,
+    const limb_t* up, std::int64_t un,
+    const limb_t* vp, std::int64_t vn);
+#endif
+
+// Thin wrapper around the LLVM-IR-generated all-in-one MG divrem kernel.
+// Handles trim and short-circuit cases; passes raw inputs to the kernel.
+template<int MAXBUF>
+inline void mg_divrem(limb_t* q, limb_t* r,
+                      const limb_t* u_in, int un,
+                      const limb_t* v_in, int vn) {
+    while (un > 0 && u_in[un - 1] == 0) --un;
+    while (vn > 0 && v_in[vn - 1] == 0) --vn;
+    if (vn == 0 || un == 0) return;
+
+    if (un < vn) {
+        for (int i = 0; i < un; ++i) r[i] = u_in[i];
+        return;
+    }
+    if (un == vn) {
+        for (int i = un - 1; i >= 0; --i) {
+            if (u_in[i] < v_in[i]) {
+                for (int j = 0; j < un; ++j) r[j] = u_in[j];
+                return;
+            }
+            if (u_in[i] > v_in[i]) break;
+        }
+    }
+
+#if defined(__x86_64__)
+    zfactor_mg_divrem(q, r, u_in, un, v_in, vn);
+#else
+    detail_div::schoolbook_div<MAXBUF>(q, r, u_in, un, v_in, vn);
+#endif
+}
+
+template<int N>
+inline void divrem(limb_t* q, limb_t* r, const limb_t* a, const limb_t* b) {
+    set_zero<N>(q);
+    set_zero<N>(r);
+    mg_divrem<N>(q, r, a, N, b, N);
+}
+
+template<int M, int N>
+inline void divrem_wide(limb_t* q, limb_t* r, const limb_t* u, const limb_t* v) {
+    static_assert(M >= N);
+    for (int i = 0; i < M - N + 1; ++i) q[i] = 0;
+    set_zero<N>(r);
+    mg_divrem<M>(q, r, u, M, v, N);
 }
 
 } // namespace zfactor::fixint::mpn

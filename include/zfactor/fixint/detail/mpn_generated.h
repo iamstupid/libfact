@@ -909,6 +909,428 @@ __attribute__((always_inline)) inline uint8_t sub_block<8>(limb_t* r, const limb
 }
 
 template<>
+__attribute__((always_inline)) inline uint8_t add1<1>(limb_t* r, const limb_t* a, limb_t b) {
+    limb_t carry, t;
+    __asm__ __volatile__(
+        "movq 0(%[a]), %[t]\n\t"
+        "addq %[b], %[t]\n\t"
+        "movq %[t], 0(%[r])\n\t"
+        "sbbq %[cy], %[cy]\n\t"
+        "negq %[cy]\n\t"
+        : [cy] "=r"(carry), [t] "=&r"(t)
+        : [r] "r"(r), [a] "r"(a), [b] "r"(b)
+        : "cc", "memory");
+    return static_cast<uint8_t>(carry);
+}
+
+
+template<>
+__attribute__((always_inline)) inline uint8_t add1<2>(limb_t* r, const limb_t* a, limb_t b) {
+    limb_t carry, t;
+    __asm__ __volatile__(
+        "movq 0(%[a]), %[t]\n\t"
+        "addq %[b], %[t]\n\t"
+        "movq %[t], 0(%[r])\n\t"
+        "movq 8(%[a]), %[t]\n\t"
+        "adcq $0, %[t]\n\t"
+        "movq %[t], 8(%[r])\n\t"
+        "sbbq %[cy], %[cy]\n\t"
+        "negq %[cy]\n\t"
+        : [cy] "=r"(carry), [t] "=&r"(t)
+        : [r] "r"(r), [a] "r"(a), [b] "r"(b)
+        : "cc", "memory");
+    return static_cast<uint8_t>(carry);
+}
+
+
+template<>
+__attribute__((always_inline)) inline uint8_t add1<3>(limb_t* r, const limb_t* a, limb_t b) {
+    limb_t carry, t;
+    __asm__ __volatile__(
+        "movq 0(%[a]), %[t]\n\t"
+        "addq %[b], %[t]\n\t"
+        "movq %[t], 0(%[r])\n\t"
+        "movq 8(%[a]), %[t]\n\t"
+        "adcq $0, %[t]\n\t"
+        "movq %[t], 8(%[r])\n\t"
+        "movq 16(%[a]), %[t]\n\t"
+        "adcq $0, %[t]\n\t"
+        "movq %[t], 16(%[r])\n\t"
+        "sbbq %[cy], %[cy]\n\t"
+        "negq %[cy]\n\t"
+        : [cy] "=r"(carry), [t] "=&r"(t)
+        : [r] "r"(r), [a] "r"(a), [b] "r"(b)
+        : "cc", "memory");
+    return static_cast<uint8_t>(carry);
+}
+
+
+template<>
+__attribute__((always_inline)) inline uint8_t add1<4>(limb_t* r, const limb_t* a, limb_t b) {
+    limb_t carry, t;
+    __asm__ __volatile__(
+        "movq 0(%[a]), %[t]\n\t"
+        "addq %[b], %[t]\n\t"
+        "movq %[t], 0(%[r])\n\t"
+        "movq 8(%[a]), %[t]\n\t"
+        "adcq $0, %[t]\n\t"
+        "movq %[t], 8(%[r])\n\t"
+        "movq 16(%[a]), %[t]\n\t"
+        "adcq $0, %[t]\n\t"
+        "movq %[t], 16(%[r])\n\t"
+        "movq 24(%[a]), %[t]\n\t"
+        "adcq $0, %[t]\n\t"
+        "movq %[t], 24(%[r])\n\t"
+        "sbbq %[cy], %[cy]\n\t"
+        "negq %[cy]\n\t"
+        : [cy] "=r"(carry), [t] "=&r"(t)
+        : [r] "r"(r), [a] "r"(a), [b] "r"(b)
+        : "cc", "memory");
+    return static_cast<uint8_t>(carry);
+}
+
+
+template<>
+__attribute__((always_inline)) inline uint8_t add1<5>(limb_t* r, const limb_t* a, limb_t b) {
+    limb_t carry, t;
+    __asm__ __volatile__(
+        "movq 0(%[a]), %[t]\n\t"
+        "addq %[b], %[t]\n\t"
+        "movq %[t], 0(%[r])\n\t"
+        "movq 8(%[a]), %[t]\n\t"
+        "adcq $0, %[t]\n\t"
+        "movq %[t], 8(%[r])\n\t"
+        "movq 16(%[a]), %[t]\n\t"
+        "adcq $0, %[t]\n\t"
+        "movq %[t], 16(%[r])\n\t"
+        "movq 24(%[a]), %[t]\n\t"
+        "adcq $0, %[t]\n\t"
+        "movq %[t], 24(%[r])\n\t"
+        "movq 32(%[a]), %[t]\n\t"
+        "adcq $0, %[t]\n\t"
+        "movq %[t], 32(%[r])\n\t"
+        "sbbq %[cy], %[cy]\n\t"
+        "negq %[cy]\n\t"
+        : [cy] "=r"(carry), [t] "=&r"(t)
+        : [r] "r"(r), [a] "r"(a), [b] "r"(b)
+        : "cc", "memory");
+    return static_cast<uint8_t>(carry);
+}
+
+
+template<>
+__attribute__((always_inline)) inline uint8_t add1<6>(limb_t* r, const limb_t* a, limb_t b) {
+    limb_t carry, t;
+    __asm__ __volatile__(
+        "movq 0(%[a]), %[t]\n\t"
+        "addq %[b], %[t]\n\t"
+        "movq %[t], 0(%[r])\n\t"
+        "movq 8(%[a]), %[t]\n\t"
+        "adcq $0, %[t]\n\t"
+        "movq %[t], 8(%[r])\n\t"
+        "movq 16(%[a]), %[t]\n\t"
+        "adcq $0, %[t]\n\t"
+        "movq %[t], 16(%[r])\n\t"
+        "movq 24(%[a]), %[t]\n\t"
+        "adcq $0, %[t]\n\t"
+        "movq %[t], 24(%[r])\n\t"
+        "movq 32(%[a]), %[t]\n\t"
+        "adcq $0, %[t]\n\t"
+        "movq %[t], 32(%[r])\n\t"
+        "movq 40(%[a]), %[t]\n\t"
+        "adcq $0, %[t]\n\t"
+        "movq %[t], 40(%[r])\n\t"
+        "sbbq %[cy], %[cy]\n\t"
+        "negq %[cy]\n\t"
+        : [cy] "=r"(carry), [t] "=&r"(t)
+        : [r] "r"(r), [a] "r"(a), [b] "r"(b)
+        : "cc", "memory");
+    return static_cast<uint8_t>(carry);
+}
+
+
+template<>
+__attribute__((always_inline)) inline uint8_t add1<7>(limb_t* r, const limb_t* a, limb_t b) {
+    limb_t carry, t;
+    __asm__ __volatile__(
+        "movq 0(%[a]), %[t]\n\t"
+        "addq %[b], %[t]\n\t"
+        "movq %[t], 0(%[r])\n\t"
+        "movq 8(%[a]), %[t]\n\t"
+        "adcq $0, %[t]\n\t"
+        "movq %[t], 8(%[r])\n\t"
+        "movq 16(%[a]), %[t]\n\t"
+        "adcq $0, %[t]\n\t"
+        "movq %[t], 16(%[r])\n\t"
+        "movq 24(%[a]), %[t]\n\t"
+        "adcq $0, %[t]\n\t"
+        "movq %[t], 24(%[r])\n\t"
+        "movq 32(%[a]), %[t]\n\t"
+        "adcq $0, %[t]\n\t"
+        "movq %[t], 32(%[r])\n\t"
+        "movq 40(%[a]), %[t]\n\t"
+        "adcq $0, %[t]\n\t"
+        "movq %[t], 40(%[r])\n\t"
+        "movq 48(%[a]), %[t]\n\t"
+        "adcq $0, %[t]\n\t"
+        "movq %[t], 48(%[r])\n\t"
+        "sbbq %[cy], %[cy]\n\t"
+        "negq %[cy]\n\t"
+        : [cy] "=r"(carry), [t] "=&r"(t)
+        : [r] "r"(r), [a] "r"(a), [b] "r"(b)
+        : "cc", "memory");
+    return static_cast<uint8_t>(carry);
+}
+
+
+template<>
+__attribute__((always_inline)) inline uint8_t add1<8>(limb_t* r, const limb_t* a, limb_t b) {
+    limb_t carry, t;
+    __asm__ __volatile__(
+        "movq 0(%[a]), %[t]\n\t"
+        "addq %[b], %[t]\n\t"
+        "movq %[t], 0(%[r])\n\t"
+        "movq 8(%[a]), %[t]\n\t"
+        "adcq $0, %[t]\n\t"
+        "movq %[t], 8(%[r])\n\t"
+        "movq 16(%[a]), %[t]\n\t"
+        "adcq $0, %[t]\n\t"
+        "movq %[t], 16(%[r])\n\t"
+        "movq 24(%[a]), %[t]\n\t"
+        "adcq $0, %[t]\n\t"
+        "movq %[t], 24(%[r])\n\t"
+        "movq 32(%[a]), %[t]\n\t"
+        "adcq $0, %[t]\n\t"
+        "movq %[t], 32(%[r])\n\t"
+        "movq 40(%[a]), %[t]\n\t"
+        "adcq $0, %[t]\n\t"
+        "movq %[t], 40(%[r])\n\t"
+        "movq 48(%[a]), %[t]\n\t"
+        "adcq $0, %[t]\n\t"
+        "movq %[t], 48(%[r])\n\t"
+        "movq 56(%[a]), %[t]\n\t"
+        "adcq $0, %[t]\n\t"
+        "movq %[t], 56(%[r])\n\t"
+        "sbbq %[cy], %[cy]\n\t"
+        "negq %[cy]\n\t"
+        : [cy] "=r"(carry), [t] "=&r"(t)
+        : [r] "r"(r), [a] "r"(a), [b] "r"(b)
+        : "cc", "memory");
+    return static_cast<uint8_t>(carry);
+}
+
+template<>
+__attribute__((always_inline)) inline uint8_t sub1<1>(limb_t* r, const limb_t* a, limb_t b) {
+    limb_t borrow, t;
+    __asm__ __volatile__(
+        "movq 0(%[a]), %[t]\n\t"
+        "subq %[b], %[t]\n\t"
+        "movq %[t], 0(%[r])\n\t"
+        "sbbq %[bw], %[bw]\n\t"
+        "negq %[bw]\n\t"
+        : [bw] "=r"(borrow), [t] "=&r"(t)
+        : [r] "r"(r), [a] "r"(a), [b] "r"(b)
+        : "cc", "memory");
+    return static_cast<uint8_t>(borrow);
+}
+
+
+template<>
+__attribute__((always_inline)) inline uint8_t sub1<2>(limb_t* r, const limb_t* a, limb_t b) {
+    limb_t borrow, t;
+    __asm__ __volatile__(
+        "movq 0(%[a]), %[t]\n\t"
+        "subq %[b], %[t]\n\t"
+        "movq %[t], 0(%[r])\n\t"
+        "movq 8(%[a]), %[t]\n\t"
+        "sbbq $0, %[t]\n\t"
+        "movq %[t], 8(%[r])\n\t"
+        "sbbq %[bw], %[bw]\n\t"
+        "negq %[bw]\n\t"
+        : [bw] "=r"(borrow), [t] "=&r"(t)
+        : [r] "r"(r), [a] "r"(a), [b] "r"(b)
+        : "cc", "memory");
+    return static_cast<uint8_t>(borrow);
+}
+
+
+template<>
+__attribute__((always_inline)) inline uint8_t sub1<3>(limb_t* r, const limb_t* a, limb_t b) {
+    limb_t borrow, t;
+    __asm__ __volatile__(
+        "movq 0(%[a]), %[t]\n\t"
+        "subq %[b], %[t]\n\t"
+        "movq %[t], 0(%[r])\n\t"
+        "movq 8(%[a]), %[t]\n\t"
+        "sbbq $0, %[t]\n\t"
+        "movq %[t], 8(%[r])\n\t"
+        "movq 16(%[a]), %[t]\n\t"
+        "sbbq $0, %[t]\n\t"
+        "movq %[t], 16(%[r])\n\t"
+        "sbbq %[bw], %[bw]\n\t"
+        "negq %[bw]\n\t"
+        : [bw] "=r"(borrow), [t] "=&r"(t)
+        : [r] "r"(r), [a] "r"(a), [b] "r"(b)
+        : "cc", "memory");
+    return static_cast<uint8_t>(borrow);
+}
+
+
+template<>
+__attribute__((always_inline)) inline uint8_t sub1<4>(limb_t* r, const limb_t* a, limb_t b) {
+    limb_t borrow, t;
+    __asm__ __volatile__(
+        "movq 0(%[a]), %[t]\n\t"
+        "subq %[b], %[t]\n\t"
+        "movq %[t], 0(%[r])\n\t"
+        "movq 8(%[a]), %[t]\n\t"
+        "sbbq $0, %[t]\n\t"
+        "movq %[t], 8(%[r])\n\t"
+        "movq 16(%[a]), %[t]\n\t"
+        "sbbq $0, %[t]\n\t"
+        "movq %[t], 16(%[r])\n\t"
+        "movq 24(%[a]), %[t]\n\t"
+        "sbbq $0, %[t]\n\t"
+        "movq %[t], 24(%[r])\n\t"
+        "sbbq %[bw], %[bw]\n\t"
+        "negq %[bw]\n\t"
+        : [bw] "=r"(borrow), [t] "=&r"(t)
+        : [r] "r"(r), [a] "r"(a), [b] "r"(b)
+        : "cc", "memory");
+    return static_cast<uint8_t>(borrow);
+}
+
+
+template<>
+__attribute__((always_inline)) inline uint8_t sub1<5>(limb_t* r, const limb_t* a, limb_t b) {
+    limb_t borrow, t;
+    __asm__ __volatile__(
+        "movq 0(%[a]), %[t]\n\t"
+        "subq %[b], %[t]\n\t"
+        "movq %[t], 0(%[r])\n\t"
+        "movq 8(%[a]), %[t]\n\t"
+        "sbbq $0, %[t]\n\t"
+        "movq %[t], 8(%[r])\n\t"
+        "movq 16(%[a]), %[t]\n\t"
+        "sbbq $0, %[t]\n\t"
+        "movq %[t], 16(%[r])\n\t"
+        "movq 24(%[a]), %[t]\n\t"
+        "sbbq $0, %[t]\n\t"
+        "movq %[t], 24(%[r])\n\t"
+        "movq 32(%[a]), %[t]\n\t"
+        "sbbq $0, %[t]\n\t"
+        "movq %[t], 32(%[r])\n\t"
+        "sbbq %[bw], %[bw]\n\t"
+        "negq %[bw]\n\t"
+        : [bw] "=r"(borrow), [t] "=&r"(t)
+        : [r] "r"(r), [a] "r"(a), [b] "r"(b)
+        : "cc", "memory");
+    return static_cast<uint8_t>(borrow);
+}
+
+
+template<>
+__attribute__((always_inline)) inline uint8_t sub1<6>(limb_t* r, const limb_t* a, limb_t b) {
+    limb_t borrow, t;
+    __asm__ __volatile__(
+        "movq 0(%[a]), %[t]\n\t"
+        "subq %[b], %[t]\n\t"
+        "movq %[t], 0(%[r])\n\t"
+        "movq 8(%[a]), %[t]\n\t"
+        "sbbq $0, %[t]\n\t"
+        "movq %[t], 8(%[r])\n\t"
+        "movq 16(%[a]), %[t]\n\t"
+        "sbbq $0, %[t]\n\t"
+        "movq %[t], 16(%[r])\n\t"
+        "movq 24(%[a]), %[t]\n\t"
+        "sbbq $0, %[t]\n\t"
+        "movq %[t], 24(%[r])\n\t"
+        "movq 32(%[a]), %[t]\n\t"
+        "sbbq $0, %[t]\n\t"
+        "movq %[t], 32(%[r])\n\t"
+        "movq 40(%[a]), %[t]\n\t"
+        "sbbq $0, %[t]\n\t"
+        "movq %[t], 40(%[r])\n\t"
+        "sbbq %[bw], %[bw]\n\t"
+        "negq %[bw]\n\t"
+        : [bw] "=r"(borrow), [t] "=&r"(t)
+        : [r] "r"(r), [a] "r"(a), [b] "r"(b)
+        : "cc", "memory");
+    return static_cast<uint8_t>(borrow);
+}
+
+
+template<>
+__attribute__((always_inline)) inline uint8_t sub1<7>(limb_t* r, const limb_t* a, limb_t b) {
+    limb_t borrow, t;
+    __asm__ __volatile__(
+        "movq 0(%[a]), %[t]\n\t"
+        "subq %[b], %[t]\n\t"
+        "movq %[t], 0(%[r])\n\t"
+        "movq 8(%[a]), %[t]\n\t"
+        "sbbq $0, %[t]\n\t"
+        "movq %[t], 8(%[r])\n\t"
+        "movq 16(%[a]), %[t]\n\t"
+        "sbbq $0, %[t]\n\t"
+        "movq %[t], 16(%[r])\n\t"
+        "movq 24(%[a]), %[t]\n\t"
+        "sbbq $0, %[t]\n\t"
+        "movq %[t], 24(%[r])\n\t"
+        "movq 32(%[a]), %[t]\n\t"
+        "sbbq $0, %[t]\n\t"
+        "movq %[t], 32(%[r])\n\t"
+        "movq 40(%[a]), %[t]\n\t"
+        "sbbq $0, %[t]\n\t"
+        "movq %[t], 40(%[r])\n\t"
+        "movq 48(%[a]), %[t]\n\t"
+        "sbbq $0, %[t]\n\t"
+        "movq %[t], 48(%[r])\n\t"
+        "sbbq %[bw], %[bw]\n\t"
+        "negq %[bw]\n\t"
+        : [bw] "=r"(borrow), [t] "=&r"(t)
+        : [r] "r"(r), [a] "r"(a), [b] "r"(b)
+        : "cc", "memory");
+    return static_cast<uint8_t>(borrow);
+}
+
+
+template<>
+__attribute__((always_inline)) inline uint8_t sub1<8>(limb_t* r, const limb_t* a, limb_t b) {
+    limb_t borrow, t;
+    __asm__ __volatile__(
+        "movq 0(%[a]), %[t]\n\t"
+        "subq %[b], %[t]\n\t"
+        "movq %[t], 0(%[r])\n\t"
+        "movq 8(%[a]), %[t]\n\t"
+        "sbbq $0, %[t]\n\t"
+        "movq %[t], 8(%[r])\n\t"
+        "movq 16(%[a]), %[t]\n\t"
+        "sbbq $0, %[t]\n\t"
+        "movq %[t], 16(%[r])\n\t"
+        "movq 24(%[a]), %[t]\n\t"
+        "sbbq $0, %[t]\n\t"
+        "movq %[t], 24(%[r])\n\t"
+        "movq 32(%[a]), %[t]\n\t"
+        "sbbq $0, %[t]\n\t"
+        "movq %[t], 32(%[r])\n\t"
+        "movq 40(%[a]), %[t]\n\t"
+        "sbbq $0, %[t]\n\t"
+        "movq %[t], 40(%[r])\n\t"
+        "movq 48(%[a]), %[t]\n\t"
+        "sbbq $0, %[t]\n\t"
+        "movq %[t], 48(%[r])\n\t"
+        "movq 56(%[a]), %[t]\n\t"
+        "sbbq $0, %[t]\n\t"
+        "movq %[t], 56(%[r])\n\t"
+        "sbbq %[bw], %[bw]\n\t"
+        "negq %[bw]\n\t"
+        : [bw] "=r"(borrow), [t] "=&r"(t)
+        : [r] "r"(r), [a] "r"(a), [b] "r"(b)
+        : "cc", "memory");
+    return static_cast<uint8_t>(borrow);
+}
+
+template<>
 __attribute__((always_inline)) inline void lshift_small<1>(limb_t* r, const limb_t* a, unsigned bits) {
     limb_t t0, t1;
     __asm__ __volatile__(
@@ -1880,6 +2302,306 @@ __attribute__((always_inline)) inline limb_t addmul1_block<8>(limb_t* r, const l
 }
 
 template<>
+__attribute__((always_inline)) inline limb_t submul1_block<1>(limb_t* r, const limb_t* a, limb_t scalar, limb_t bw) {
+#if defined(ZFACTOR_HAS_BMI2)
+    limb_t bo = 0, t0 = 0, t1 = 0, t2 = 0;
+        __asm__ __volatile__(
+            "movq %[scalar], %%rdx\n\t"
+            "mulx 0(%[a]), %[t0], %[bo]\n\t"
+            "addq %[bi], %[t0]\n\t"
+            "adcq $0, %[bo]\n\t"
+            "subq %[t0], 0(%[r])\n\t"
+            "adcq $0, %[bo]\n\t"
+            : [bo] "=&r"(bo), [t0] "=&r"(t0), [t1] "=&r"(t1), [t2] "=&r"(t2)
+            : [r] "r"(r), [a] "r"(a), [scalar] "r"(scalar), [bi] "r"(bw)
+            : "rdx", "cc", "memory");
+        return bo;
+#else
+    return generic_submul1_block<1>(r, a, scalar, bw);
+#endif
+}
+
+template<>
+__attribute__((always_inline)) inline limb_t submul1_block<2>(limb_t* r, const limb_t* a, limb_t scalar, limb_t bw) {
+#if defined(ZFACTOR_HAS_BMI2)
+    limb_t bo = 0, t0 = 0, t1 = 0, t2 = 0;
+        __asm__ __volatile__(
+            "movq %[scalar], %%rdx\n\t"
+            "mulx 0(%[a]), %[t0], %[t1]\n\t"
+            "addq %[bi], %[t0]\n\t"
+            "adcq $0, %[t1]\n\t"
+            "subq %[t0], 0(%[r])\n\t"
+            "adcq $0, %[t1]\n\t"
+            "mulx 8(%[a]), %[t0], %[bo]\n\t"
+            "addq %[t1], %[t0]\n\t"
+            "adcq $0, %[bo]\n\t"
+            "subq %[t0], 8(%[r])\n\t"
+            "adcq $0, %[bo]\n\t"
+            : [bo] "=&r"(bo), [t0] "=&r"(t0), [t1] "=&r"(t1), [t2] "=&r"(t2)
+            : [r] "r"(r), [a] "r"(a), [scalar] "r"(scalar), [bi] "r"(bw)
+            : "rdx", "cc", "memory");
+        return bo;
+#else
+    return generic_submul1_block<2>(r, a, scalar, bw);
+#endif
+}
+
+template<>
+__attribute__((always_inline)) inline limb_t submul1_block<3>(limb_t* r, const limb_t* a, limb_t scalar, limb_t bw) {
+#if defined(ZFACTOR_HAS_BMI2)
+    limb_t bo = 0, t0 = 0, t1 = 0, t2 = 0;
+        __asm__ __volatile__(
+            "movq %[scalar], %%rdx\n\t"
+            "mulx 0(%[a]), %[t0], %[t1]\n\t"
+            "addq %[bi], %[t0]\n\t"
+            "adcq $0, %[t1]\n\t"
+            "subq %[t0], 0(%[r])\n\t"
+            "adcq $0, %[t1]\n\t"
+            "mulx 8(%[a]), %[t0], %[t2]\n\t"
+            "addq %[t1], %[t0]\n\t"
+            "adcq $0, %[t2]\n\t"
+            "subq %[t0], 8(%[r])\n\t"
+            "adcq $0, %[t2]\n\t"
+            "mulx 16(%[a]), %[t0], %[bo]\n\t"
+            "addq %[t2], %[t0]\n\t"
+            "adcq $0, %[bo]\n\t"
+            "subq %[t0], 16(%[r])\n\t"
+            "adcq $0, %[bo]\n\t"
+            : [bo] "=&r"(bo), [t0] "=&r"(t0), [t1] "=&r"(t1), [t2] "=&r"(t2)
+            : [r] "r"(r), [a] "r"(a), [scalar] "r"(scalar), [bi] "r"(bw)
+            : "rdx", "cc", "memory");
+        return bo;
+#else
+    return generic_submul1_block<3>(r, a, scalar, bw);
+#endif
+}
+
+template<>
+__attribute__((always_inline)) inline limb_t submul1_block<4>(limb_t* r, const limb_t* a, limb_t scalar, limb_t bw) {
+#if defined(ZFACTOR_HAS_BMI2)
+    limb_t bo = 0, t0 = 0, t1 = 0, t2 = 0;
+        __asm__ __volatile__(
+            "movq %[scalar], %%rdx\n\t"
+            "mulx 0(%[a]), %[t0], %[t1]\n\t"
+            "addq %[bi], %[t0]\n\t"
+            "adcq $0, %[t1]\n\t"
+            "subq %[t0], 0(%[r])\n\t"
+            "adcq $0, %[t1]\n\t"
+            "mulx 8(%[a]), %[t0], %[t2]\n\t"
+            "addq %[t1], %[t0]\n\t"
+            "adcq $0, %[t2]\n\t"
+            "subq %[t0], 8(%[r])\n\t"
+            "adcq $0, %[t2]\n\t"
+            "mulx 16(%[a]), %[t0], %[t1]\n\t"
+            "addq %[t2], %[t0]\n\t"
+            "adcq $0, %[t1]\n\t"
+            "subq %[t0], 16(%[r])\n\t"
+            "adcq $0, %[t1]\n\t"
+            "mulx 24(%[a]), %[t0], %[bo]\n\t"
+            "addq %[t1], %[t0]\n\t"
+            "adcq $0, %[bo]\n\t"
+            "subq %[t0], 24(%[r])\n\t"
+            "adcq $0, %[bo]\n\t"
+            : [bo] "=&r"(bo), [t0] "=&r"(t0), [t1] "=&r"(t1), [t2] "=&r"(t2)
+            : [r] "r"(r), [a] "r"(a), [scalar] "r"(scalar), [bi] "r"(bw)
+            : "rdx", "cc", "memory");
+        return bo;
+#else
+    return generic_submul1_block<4>(r, a, scalar, bw);
+#endif
+}
+
+template<>
+__attribute__((always_inline)) inline limb_t submul1_block<5>(limb_t* r, const limb_t* a, limb_t scalar, limb_t bw) {
+#if defined(ZFACTOR_HAS_BMI2)
+    limb_t bo = 0, t0 = 0, t1 = 0, t2 = 0;
+        __asm__ __volatile__(
+            "movq %[scalar], %%rdx\n\t"
+            "mulx 0(%[a]), %[t0], %[t1]\n\t"
+            "addq %[bi], %[t0]\n\t"
+            "adcq $0, %[t1]\n\t"
+            "subq %[t0], 0(%[r])\n\t"
+            "adcq $0, %[t1]\n\t"
+            "mulx 8(%[a]), %[t0], %[t2]\n\t"
+            "addq %[t1], %[t0]\n\t"
+            "adcq $0, %[t2]\n\t"
+            "subq %[t0], 8(%[r])\n\t"
+            "adcq $0, %[t2]\n\t"
+            "mulx 16(%[a]), %[t0], %[t1]\n\t"
+            "addq %[t2], %[t0]\n\t"
+            "adcq $0, %[t1]\n\t"
+            "subq %[t0], 16(%[r])\n\t"
+            "adcq $0, %[t1]\n\t"
+            "mulx 24(%[a]), %[t0], %[t2]\n\t"
+            "addq %[t1], %[t0]\n\t"
+            "adcq $0, %[t2]\n\t"
+            "subq %[t0], 24(%[r])\n\t"
+            "adcq $0, %[t2]\n\t"
+            "mulx 32(%[a]), %[t0], %[bo]\n\t"
+            "addq %[t2], %[t0]\n\t"
+            "adcq $0, %[bo]\n\t"
+            "subq %[t0], 32(%[r])\n\t"
+            "adcq $0, %[bo]\n\t"
+            : [bo] "=&r"(bo), [t0] "=&r"(t0), [t1] "=&r"(t1), [t2] "=&r"(t2)
+            : [r] "r"(r), [a] "r"(a), [scalar] "r"(scalar), [bi] "r"(bw)
+            : "rdx", "cc", "memory");
+        return bo;
+#else
+    return generic_submul1_block<5>(r, a, scalar, bw);
+#endif
+}
+
+template<>
+__attribute__((always_inline)) inline limb_t submul1_block<6>(limb_t* r, const limb_t* a, limb_t scalar, limb_t bw) {
+#if defined(ZFACTOR_HAS_BMI2)
+    limb_t bo = 0, t0 = 0, t1 = 0, t2 = 0;
+        __asm__ __volatile__(
+            "movq %[scalar], %%rdx\n\t"
+            "mulx 0(%[a]), %[t0], %[t1]\n\t"
+            "addq %[bi], %[t0]\n\t"
+            "adcq $0, %[t1]\n\t"
+            "subq %[t0], 0(%[r])\n\t"
+            "adcq $0, %[t1]\n\t"
+            "mulx 8(%[a]), %[t0], %[t2]\n\t"
+            "addq %[t1], %[t0]\n\t"
+            "adcq $0, %[t2]\n\t"
+            "subq %[t0], 8(%[r])\n\t"
+            "adcq $0, %[t2]\n\t"
+            "mulx 16(%[a]), %[t0], %[t1]\n\t"
+            "addq %[t2], %[t0]\n\t"
+            "adcq $0, %[t1]\n\t"
+            "subq %[t0], 16(%[r])\n\t"
+            "adcq $0, %[t1]\n\t"
+            "mulx 24(%[a]), %[t0], %[t2]\n\t"
+            "addq %[t1], %[t0]\n\t"
+            "adcq $0, %[t2]\n\t"
+            "subq %[t0], 24(%[r])\n\t"
+            "adcq $0, %[t2]\n\t"
+            "mulx 32(%[a]), %[t0], %[t1]\n\t"
+            "addq %[t2], %[t0]\n\t"
+            "adcq $0, %[t1]\n\t"
+            "subq %[t0], 32(%[r])\n\t"
+            "adcq $0, %[t1]\n\t"
+            "mulx 40(%[a]), %[t0], %[bo]\n\t"
+            "addq %[t1], %[t0]\n\t"
+            "adcq $0, %[bo]\n\t"
+            "subq %[t0], 40(%[r])\n\t"
+            "adcq $0, %[bo]\n\t"
+            : [bo] "=&r"(bo), [t0] "=&r"(t0), [t1] "=&r"(t1), [t2] "=&r"(t2)
+            : [r] "r"(r), [a] "r"(a), [scalar] "r"(scalar), [bi] "r"(bw)
+            : "rdx", "cc", "memory");
+        return bo;
+#else
+    return generic_submul1_block<6>(r, a, scalar, bw);
+#endif
+}
+
+template<>
+__attribute__((always_inline)) inline limb_t submul1_block<7>(limb_t* r, const limb_t* a, limb_t scalar, limb_t bw) {
+#if defined(ZFACTOR_HAS_BMI2)
+    limb_t bo = 0, t0 = 0, t1 = 0, t2 = 0;
+        __asm__ __volatile__(
+            "movq %[scalar], %%rdx\n\t"
+            "mulx 0(%[a]), %[t0], %[t1]\n\t"
+            "addq %[bi], %[t0]\n\t"
+            "adcq $0, %[t1]\n\t"
+            "subq %[t0], 0(%[r])\n\t"
+            "adcq $0, %[t1]\n\t"
+            "mulx 8(%[a]), %[t0], %[t2]\n\t"
+            "addq %[t1], %[t0]\n\t"
+            "adcq $0, %[t2]\n\t"
+            "subq %[t0], 8(%[r])\n\t"
+            "adcq $0, %[t2]\n\t"
+            "mulx 16(%[a]), %[t0], %[t1]\n\t"
+            "addq %[t2], %[t0]\n\t"
+            "adcq $0, %[t1]\n\t"
+            "subq %[t0], 16(%[r])\n\t"
+            "adcq $0, %[t1]\n\t"
+            "mulx 24(%[a]), %[t0], %[t2]\n\t"
+            "addq %[t1], %[t0]\n\t"
+            "adcq $0, %[t2]\n\t"
+            "subq %[t0], 24(%[r])\n\t"
+            "adcq $0, %[t2]\n\t"
+            "mulx 32(%[a]), %[t0], %[t1]\n\t"
+            "addq %[t2], %[t0]\n\t"
+            "adcq $0, %[t1]\n\t"
+            "subq %[t0], 32(%[r])\n\t"
+            "adcq $0, %[t1]\n\t"
+            "mulx 40(%[a]), %[t0], %[t2]\n\t"
+            "addq %[t1], %[t0]\n\t"
+            "adcq $0, %[t2]\n\t"
+            "subq %[t0], 40(%[r])\n\t"
+            "adcq $0, %[t2]\n\t"
+            "mulx 48(%[a]), %[t0], %[bo]\n\t"
+            "addq %[t2], %[t0]\n\t"
+            "adcq $0, %[bo]\n\t"
+            "subq %[t0], 48(%[r])\n\t"
+            "adcq $0, %[bo]\n\t"
+            : [bo] "=&r"(bo), [t0] "=&r"(t0), [t1] "=&r"(t1), [t2] "=&r"(t2)
+            : [r] "r"(r), [a] "r"(a), [scalar] "r"(scalar), [bi] "r"(bw)
+            : "rdx", "cc", "memory");
+        return bo;
+#else
+    return generic_submul1_block<7>(r, a, scalar, bw);
+#endif
+}
+
+template<>
+__attribute__((always_inline)) inline limb_t submul1_block<8>(limb_t* r, const limb_t* a, limb_t scalar, limb_t bw) {
+#if defined(ZFACTOR_HAS_BMI2)
+    limb_t bo = 0, t0 = 0, t1 = 0, t2 = 0;
+        __asm__ __volatile__(
+            "movq %[scalar], %%rdx\n\t"
+            "mulx 0(%[a]), %[t0], %[t1]\n\t"
+            "addq %[bi], %[t0]\n\t"
+            "adcq $0, %[t1]\n\t"
+            "subq %[t0], 0(%[r])\n\t"
+            "adcq $0, %[t1]\n\t"
+            "mulx 8(%[a]), %[t0], %[t2]\n\t"
+            "addq %[t1], %[t0]\n\t"
+            "adcq $0, %[t2]\n\t"
+            "subq %[t0], 8(%[r])\n\t"
+            "adcq $0, %[t2]\n\t"
+            "mulx 16(%[a]), %[t0], %[t1]\n\t"
+            "addq %[t2], %[t0]\n\t"
+            "adcq $0, %[t1]\n\t"
+            "subq %[t0], 16(%[r])\n\t"
+            "adcq $0, %[t1]\n\t"
+            "mulx 24(%[a]), %[t0], %[t2]\n\t"
+            "addq %[t1], %[t0]\n\t"
+            "adcq $0, %[t2]\n\t"
+            "subq %[t0], 24(%[r])\n\t"
+            "adcq $0, %[t2]\n\t"
+            "mulx 32(%[a]), %[t0], %[t1]\n\t"
+            "addq %[t2], %[t0]\n\t"
+            "adcq $0, %[t1]\n\t"
+            "subq %[t0], 32(%[r])\n\t"
+            "adcq $0, %[t1]\n\t"
+            "mulx 40(%[a]), %[t0], %[t2]\n\t"
+            "addq %[t1], %[t0]\n\t"
+            "adcq $0, %[t2]\n\t"
+            "subq %[t0], 40(%[r])\n\t"
+            "adcq $0, %[t2]\n\t"
+            "mulx 48(%[a]), %[t0], %[t1]\n\t"
+            "addq %[t2], %[t0]\n\t"
+            "adcq $0, %[t1]\n\t"
+            "subq %[t0], 48(%[r])\n\t"
+            "adcq $0, %[t1]\n\t"
+            "mulx 56(%[a]), %[t0], %[bo]\n\t"
+            "addq %[t1], %[t0]\n\t"
+            "adcq $0, %[bo]\n\t"
+            "subq %[t0], 56(%[r])\n\t"
+            "adcq $0, %[bo]\n\t"
+            : [bo] "=&r"(bo), [t0] "=&r"(t0), [t1] "=&r"(t1), [t2] "=&r"(t2)
+            : [r] "r"(r), [a] "r"(a), [scalar] "r"(scalar), [bi] "r"(bw)
+            : "rdx", "cc", "memory");
+        return bo;
+#else
+    return generic_submul1_block<8>(r, a, scalar, bw);
+#endif
+}
+
+template<>
 __attribute__((always_inline)) inline bool sqr_small_asm<2>(limb_t* r, const limb_t* a) {
 #if defined(ZFACTOR_HAS_BMI2)
     __asm__ __volatile__(
@@ -2131,8 +2853,18 @@ __attribute__((always_inline)) inline uint8_t add(limb_t* r, const limb_t* a, co
 }
 
 template<int N>
+__attribute__((always_inline)) inline uint8_t addc(limb_t* r, const limb_t* a, const limb_t* b, uint8_t cy) {
+    return add_chunked<N, 8>(r, a, b, cy);
+}
+
+template<int N>
 __attribute__((always_inline)) inline uint8_t sub(limb_t* r, const limb_t* a, const limb_t* b) {
     return sub_chunked_first<N, 8>(r, a, b);
+}
+
+template<int N>
+__attribute__((always_inline)) inline uint8_t subc(limb_t* r, const limb_t* a, const limb_t* b, uint8_t bw) {
+    return sub_chunked<N, 8>(r, a, b, bw);
 }
 
 template<int N>
@@ -2152,7 +2884,7 @@ __attribute__((always_inline)) inline limb_t submul1_chunked(limb_t* r, const li
 
 template<int N>
 __attribute__((always_inline)) inline limb_t submul1(limb_t* r, const limb_t* a, limb_t b) {
-    return submul1_chunked<N, 4>(r, a, b, 0);
+    return submul1_chunked<N, 8>(r, a, b, 0);
 }
 
 } // namespace zfactor::fixint::mpn

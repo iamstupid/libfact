@@ -94,6 +94,21 @@ struct UInt {
         return a;
     }
 
+    friend UInt operator/(const UInt& a, const UInt& b) {
+        UInt q, r;
+        mpn::divrem<N>(q.d, r.d, a.d, b.d);
+        return q;
+    }
+
+    friend UInt operator%(const UInt& a, const UInt& b) {
+        UInt q, r;
+        mpn::divrem<N>(q.d, r.d, a.d, b.d);
+        return r;
+    }
+
+    UInt& operator/=(const UInt& other) { return *this = *this / other; }
+    UInt& operator%=(const UInt& other) { return *this = *this % other; }
+
     [[nodiscard]] bool is_zero() const { return mpn::is_zero<N>(d); }
     [[nodiscard]] unsigned bit_length() const { return mpn::bit_length<N>(d); }
 

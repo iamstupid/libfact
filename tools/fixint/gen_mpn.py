@@ -110,8 +110,18 @@ __attribute__((always_inline)) inline uint8_t add(limb_t* r, const limb_t* a, co
 }
 
 template<int N>
+__attribute__((always_inline)) inline uint8_t addc(limb_t* r, const limb_t* a, const limb_t* b, uint8_t cy) {
+    return add_chunked<N, 8>(r, a, b, cy);
+}
+
+template<int N>
 __attribute__((always_inline)) inline uint8_t sub(limb_t* r, const limb_t* a, const limb_t* b) {
     return sub_chunked_first<N, 8>(r, a, b);
+}
+
+template<int N>
+__attribute__((always_inline)) inline uint8_t subc(limb_t* r, const limb_t* a, const limb_t* b, uint8_t bw) {
+    return sub_chunked<N, 8>(r, a, b, bw);
 }
 
 template<int N>
@@ -131,7 +141,7 @@ __attribute__((always_inline)) inline limb_t submul1_chunked(limb_t* r, const li
 
 template<int N>
 __attribute__((always_inline)) inline limb_t submul1(limb_t* r, const limb_t* a, limb_t b) {
-    return submul1_chunked<N, 4>(r, a, b, 0);
+    return submul1_chunked<N, 8>(r, a, b, 0);
 }
 
 } // namespace zfactor::fixint::mpn
@@ -195,6 +205,36 @@ def sub_carry_asm(block: int) -> str:
         off = i * 8
         lines.append(f'"movq {off}(%[a]), %[t]\\n\\t"')
         lines.append(f'"sbbq {off}(%[b]), %[t]\\n\\t"')
+        lines.append(f'"movq %[t], {off}(%[r])\\n\\t"')
+    lines.append('"sbbq %[bw], %[bw]\\n\\t"')
+    lines.append('"negq %[bw]\\n\\t"')
+    return "\n        ".join(lines)
+
+
+def add1_asm(block: int) -> str:
+    lines = []
+    for i in range(block):
+        off = i * 8
+        lines.append(f'"movq {off}(%[a]), %[t]\\n\\t"')
+        if i == 0:
+            lines.append('"addq %[b], %[t]\\n\\t"')
+        else:
+            lines.append('"adcq $0, %[t]\\n\\t"')
+        lines.append(f'"movq %[t], {off}(%[r])\\n\\t"')
+    lines.append('"sbbq %[cy], %[cy]\\n\\t"')
+    lines.append('"negq %[cy]\\n\\t"')
+    return "\n        ".join(lines)
+
+
+def sub1_asm(block: int) -> str:
+    lines = []
+    for i in range(block):
+        off = i * 8
+        lines.append(f'"movq {off}(%[a]), %[t]\\n\\t"')
+        if i == 0:
+            lines.append('"subq %[b], %[t]\\n\\t"')
+        else:
+            lines.append('"sbbq $0, %[t]\\n\\t"')
         lines.append(f'"movq %[t], {off}(%[r])\\n\\t"')
     lines.append('"sbbq %[bw], %[bw]\\n\\t"')
     lines.append('"negq %[bw]\\n\\t"')
@@ -307,6 +347,119 @@ __attribute__((always_inline)) inline limb_t addmul1_block<{block}>(limb_t* r, c
 {tier2_addmul(block)}
 #else
     return generic_addmul1_block<{block}>(r, a, scalar, cy);
+#endif
+}}
+"""
+
+
+def tier2_submul(block: int) -> str:
+    """BMI2-only ASM for submul1_block<B>: r[0..B-1] -= a[0..B-1] * scalar.
+    Per-limb pattern: mulx + addq(prev_hi) + adcq(0) + subq(t0,r[i]) + adcq(0).
+    """
+    lines = [
+        '        __asm__ __volatile__(',
+        '            "movq %[scalar], %%rdx\\n\\t"',
+    ]
+    hi = "%[bo]" if block == 1 else "%[t1]"
+    lines.extend([
+        f'            "mulx 0(%[a]), %[t0], {hi}\\n\\t"',
+        f'            "addq %[bi], %[t0]\\n\\t"',
+        f'            "adcq $0, {hi}\\n\\t"',
+        f'            "subq %[t0], 0(%[r])\\n\\t"',
+        f'            "adcq $0, {hi}\\n\\t"',
+    ])
+    prev_hi = hi
+    for i in range(1, block):
+        off = i * 8
+        hi = "%[bo]" if i == block - 1 else ("%[t1]" if i % 2 == 0 else "%[t2]")
+        lines.extend([
+            f'            "mulx {off}(%[a]), %[t0], {hi}\\n\\t"',
+            f'            "addq {prev_hi}, %[t0]\\n\\t"',
+            f'            "adcq $0, {hi}\\n\\t"',
+            f'            "subq %[t0], {off}(%[r])\\n\\t"',
+            f'            "adcq $0, {hi}\\n\\t"',
+        ])
+        prev_hi = hi
+    lines.extend([
+        '            : [bo] "=&r"(bo), [t0] "=&r"(t0), [t1] "=&r"(t1), [t2] "=&r"(t2)',
+        '            : [r] "r"(r), [a] "r"(a), [scalar] "r"(scalar), [bi] "r"(bw)',
+        '            : "rdx", "cc", "memory");',
+        "        return bo;",
+    ])
+    return "\n".join(lines)
+
+
+def tier1_submul(block: int) -> str:
+    """BMI2+ADX ASM for submul1_block<B>.
+    Uses GMP's complement trick: r -= a*s == r += ~(a*s) + 1.
+    Two parallel carry chains: cf for the lo+~lo+r addition (via adcx),
+    of for the hi accumulation (via adox).  The "borrow out" is the
+    accumulated -hi value, which we negate at the end.
+    """
+    lines = [
+        '        __asm__ __volatile__(',
+        '            "movq %[scalar], %%rdx\\n\\t"',
+        # Initialize: clear of (xor eax) and set cf=1 (stc, equivalent to "+1" for ~x+1 = -x)
+        '            "xorl %%eax, %%eax\\n\\t"',
+        '            "movq %[bi], %[bo]\\n\\t"',
+        # Set cf for the initial +1: stc.  But we also need to subtract bi.
+        # Easier path: bo accumulates -result_high; initialize bo = -bw_in (handled by neg).
+        # Use neg to set CF = (bw_in != 0): if bw_in=0, neg sets cf=0; if bw_in=1, neg sets cf=1.
+        '            "negq %[bo]\\n\\t"',
+    ]
+    # Loop body: per limb
+    #   mulx a[i], t0, t1     ; t0:t1 = a[i]*scalar
+    #   adox t1, bo           ; bo += t1 (using OF chain)
+    #   not  t0               ; t0 = ~t0
+    #   adcx r[i], t0         ; t0 += r[i] + CF (using CF chain)
+    #   mov t0, r[i]
+    # Need t1 != bo when block==1; use t2 for t1 in that case
+    for i in range(block):
+        off = i * 8
+        hi_reg = "%[t1]" if i % 2 == 0 else "%[t2]"
+        if block == 1:
+            hi_reg = "%[t1]"
+        lines.extend([
+            f'            "mulx {off}(%[a]), %[t0], {hi_reg}\\n\\t"',
+            f'            "adoxq {hi_reg}, %[bo]\\n\\t"',
+            f'            "notq %[t0]\\n\\t"',
+            f'            "adcxq {off}(%[r]), %[t0]\\n\\t"',
+            f'            "movq %[t0], {off}(%[r])\\n\\t"',
+        ])
+    # Finalize: bo currently holds -result_high accumulated with both chains.
+    # Need to fold the final cf and of into bo.
+    #
+    # After the loop:
+    #   cf = 1 if no underflow on the last add, 0 if underflow
+    #   of = 1 if of-chain on bo overflowed (rare)
+    # bo holds the negated borrow with cf adjustment pending.
+    # We want bw_out = -bo + (1 - cf) corrected for of.
+    #
+    # The simpler GMP idiom: at end,
+    #   adox %[zero], %[bo]   ; absorb final of
+    #   adc  $0, %[bo]        ; absorb final cf via the carry chain (becomes part of -bo)
+    #   neg  %[bo]            ; bo = actual borrow_out
+    lines.extend([
+        '            "movq $0, %[t0]\\n\\t"',
+        '            "adoxq %[t0], %[bo]\\n\\t"',
+        '            "adcq  $0, %[bo]\\n\\t"',
+        '            "negq  %[bo]\\n\\t"',
+        '            : [bo] "+&r"(bo), [t0] "=&r"(t0), [t1] "=&r"(t1), [t2] "=&r"(t2)',
+        '            : [scalar] "r"(scalar), [r] "r"(r), [a] "r"(a), [bi] "r"(bw)',
+        '            : "rax", "rdx", "cc", "memory");',
+    ])
+    return "\n".join(lines)
+
+
+def emit_submul1_block(block: int) -> str:
+    return f"""
+template<>
+__attribute__((always_inline)) inline limb_t submul1_block<{block}>(limb_t* r, const limb_t* a, limb_t scalar, limb_t bw) {{
+#if defined(ZFACTOR_HAS_BMI2)
+    limb_t bo = 0, t0 = 0, t1 = 0, t2 = 0;
+{tier2_submul(block)}
+#else
+    return generic_submul1_block<{block}>(r, a, scalar, bw);
 #endif
 }}
 """
@@ -507,6 +660,46 @@ __attribute__((always_inline)) inline uint8_t add_block<{block}>(limb_t* r, cons
     return "\n".join(parts)
 
 
+def emit_add1_blocks() -> str:
+    parts = []
+    for block in range(1, 9):
+        parts.append(
+            f"""
+template<>
+__attribute__((always_inline)) inline uint8_t add1<{block}>(limb_t* r, const limb_t* a, limb_t b) {{
+    limb_t carry, t;
+    __asm__ __volatile__(
+        {add1_asm(block)}
+        : [cy] "=r"(carry), [t] "=&r"(t)
+        : [r] "r"(r), [a] "r"(a), [b] "r"(b)
+        : "cc", "memory");
+    return static_cast<uint8_t>(carry);
+}}
+"""
+        )
+    return "\n".join(parts)
+
+
+def emit_sub1_blocks() -> str:
+    parts = []
+    for block in range(1, 9):
+        parts.append(
+            f"""
+template<>
+__attribute__((always_inline)) inline uint8_t sub1<{block}>(limb_t* r, const limb_t* a, limb_t b) {{
+    limb_t borrow, t;
+    __asm__ __volatile__(
+        {sub1_asm(block)}
+        : [bw] "=r"(borrow), [t] "=&r"(t)
+        : [r] "r"(r), [a] "r"(a), [b] "r"(b)
+        : "cc", "memory");
+    return static_cast<uint8_t>(borrow);
+}}
+"""
+        )
+    return "\n".join(parts)
+
+
 def emit_sub_blocks() -> str:
     parts = []
     for block in range(1, 9):
@@ -569,9 +762,18 @@ __attribute__((always_inline)) inline void rshift_small<{block}>(limb_t* r, cons
 
 
 def render() -> str:
-    parts = [HEADER, emit_add_blocks(), emit_sub_blocks(), emit_shift_blocks()]
+    parts = [
+        HEADER,
+        emit_add_blocks(),
+        emit_sub_blocks(),
+        emit_add1_blocks(),
+        emit_sub1_blocks(),
+        emit_shift_blocks(),
+    ]
     for block in range(1, 9):
         parts.append(emit_addmul1_block(block))
+    for block in range(1, 9):
+        parts.append(emit_submul1_block(block))
     parts.append(emit_sqr_small_2())
     parts.append(emit_sqr_small_3())
     parts.append(emit_sqr_small_comba(4))
