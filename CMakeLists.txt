@@ -280,6 +280,45 @@ if(ZFACTOR_BUILD_BENCHMARKS)
     target_link_libraries(test_zint_smoke PRIVATE zint)
     zfactor_apply_common_flags(test_zint_smoke)
 
+    add_executable(test_zint_ntt_dispatch bench/fixint/test_zint_ntt_dispatch.cpp)
+    target_link_libraries(test_zint_ntt_dispatch PRIVATE zint)
+    zfactor_apply_common_flags(test_zint_ntt_dispatch)
+
+    add_executable(test_zint_ntt_debug bench/fixint/test_zint_ntt_debug.cpp)
+    target_link_libraries(test_zint_ntt_debug PRIVATE zint)
+    zfactor_apply_common_flags(test_zint_ntt_debug)
+
+    if(ZFACTOR_BENCH_GMP)
+        add_executable(bench_ntt_vs_gmp bench/fixint/bench_ntt_vs_gmp.cpp)
+        target_link_libraries(bench_ntt_vs_gmp PRIVATE zint)
+        zfactor_apply_common_flags(bench_ntt_vs_gmp)
+
+        add_executable(test_zint_ntt_regress bench/fixint/test_zint_ntt_regress.cpp)
+        target_link_libraries(test_zint_ntt_regress PRIVATE zint)
+        zfactor_apply_common_flags(test_zint_ntt_regress)
+
+        # GMP wiring replicates the bench_uint block below.
+        find_path(ZFACTOR_GMP_INCLUDE_DIR gmp.h
+            HINTS "${ZFACTOR_GMP_ROOT}" "${ZFACTOR_GMP_ROOT}/include"
+            PATH_SUFFIXES include)
+        find_library(ZFACTOR_GMP_LIBRARY
+            NAMES gmp libgmp libgmp.a
+            HINTS
+                "${ZFACTOR_GMP_ROOT}/.libs"
+                "${ZFACTOR_GMP_ROOT}"
+                "${ZFACTOR_GMP_ROOT}/lib"
+                "${ZFACTOR_GMP_ROOT}/lib64"
+            PATH_SUFFIXES lib lib64 .libs)
+        if(NOT ZFACTOR_GMP_INCLUDE_DIR OR NOT ZFACTOR_GMP_LIBRARY)
+            message(FATAL_ERROR
+                "bench_ntt_vs_gmp needs GMP: set ZFACTOR_GMP_ROOT to the GMP install prefix.")
+        endif()
+        target_include_directories(bench_ntt_vs_gmp PRIVATE "${ZFACTOR_GMP_INCLUDE_DIR}")
+        target_link_libraries(bench_ntt_vs_gmp PRIVATE "${ZFACTOR_GMP_LIBRARY}")
+        target_include_directories(test_zint_ntt_regress PRIVATE "${ZFACTOR_GMP_INCLUDE_DIR}")
+        target_link_libraries(test_zint_ntt_regress PRIVATE "${ZFACTOR_GMP_LIBRARY}")
+    endif()
+
     add_executable(test_eecm_setup bench/fixint/test_eecm_setup.cpp)
     target_link_libraries(test_eecm_setup PRIVATE zfactor_fixint)
     zfactor_apply_common_flags(test_eecm_setup)
