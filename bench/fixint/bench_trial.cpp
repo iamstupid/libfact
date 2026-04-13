@@ -18,6 +18,8 @@ using zfactor::trial_divide;
 #if defined(__AVX2__)
 using zfactor::SimdTrialDivTable;
 using zfactor::trial_divide_simd;
+using zfactor::SimdTrialDivTableFP;
+using zfactor::trial_divide_simd_fp;
 #endif
 #if defined(__AVX512F__) && defined(__AVX512DQ__)
 using zfactor::Simd512TrialDivTable;
@@ -79,6 +81,7 @@ template<int N>
 void bench_n(const TrialDivTable& scalar_table
 #if defined(__AVX2__)
              , const SimdTrialDivTable& simd_table
+             , const SimdTrialDivTableFP& simd_fp_table
 #endif
 #if defined(__AVX512F__) && defined(__AVX512DQ__)
              , const Simd512TrialDivTable& simd512_table
@@ -100,6 +103,13 @@ void bench_n(const TrialDivTable& scalar_table
     double simd_speedup = scalar_ns / simd_ns;
     std::printf("  avx2    N=%-2d  %8.0f ns/cand  %6.2f ns/prime   %5.2f Mcand/s   %.2fx\n",
                 N, simd_ns, simd_per_prime, 1000.0 / simd_ns, simd_speedup);
+
+    double fp_ns = run_trial_bench<N>(simd_fp_table, batch,
+        [](UInt<N>& c, const SimdTrialDivTableFP& t) { return trial_divide_simd_fp<N>(c, t); });
+    double fp_per_prime = fp_ns / double(simd_fp_table.size());
+    double fp_speedup = scalar_ns / fp_ns;
+    std::printf("  fp      N=%-2d  %8.0f ns/cand  %6.2f ns/prime   %5.2f Mcand/s   %.2fx\n",
+                N, fp_ns, fp_per_prime, 1000.0 / fp_ns, fp_speedup);
 #endif
 
 #if defined(__AVX512F__) && defined(__AVX512DQ__)
@@ -121,6 +131,7 @@ int main() {
         auto scalar_table = TrialDivTable::build(B);
 #if defined(__AVX2__)
         auto simd_table = SimdTrialDivTable::build(B);
+        auto simd_fp_table = SimdTrialDivTableFP::build(B);
 #endif
 #if defined(__AVX512F__) && defined(__AVX512DQ__)
         auto simd512_table = Simd512TrialDivTable::build(B);
@@ -141,12 +152,12 @@ int main() {
         bench_n<6>(scalar_table, simd_table, simd512_table);
         bench_n<8>(scalar_table, simd_table, simd512_table);
 #elif defined(__AVX2__)
-        bench_n<1>(scalar_table, simd_table);
-        bench_n<2>(scalar_table, simd_table);
-        bench_n<3>(scalar_table, simd_table);
-        bench_n<4>(scalar_table, simd_table);
-        bench_n<6>(scalar_table, simd_table);
-        bench_n<8>(scalar_table, simd_table);
+        bench_n<1>(scalar_table, simd_table, simd_fp_table);
+        bench_n<2>(scalar_table, simd_table, simd_fp_table);
+        bench_n<3>(scalar_table, simd_table, simd_fp_table);
+        bench_n<4>(scalar_table, simd_table, simd_fp_table);
+        bench_n<6>(scalar_table, simd_table, simd_fp_table);
+        bench_n<8>(scalar_table, simd_table, simd_fp_table);
 #else
         bench_n<1>(scalar_table);
         bench_n<2>(scalar_table);

@@ -94,7 +94,8 @@ if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64|amd64")
     add_library(zfactor_fixint_backend STATIC
         src/fixint/sqr_diag_addlsh1_x86_64.S
         src/fixint/montmul_x86_64.S
-        src/fixint/divrem_x86_64.S)
+        src/fixint/divrem_x86_64.S
+        src/fixint/divexact_x86_64.S)
     target_compile_options(zfactor_fixint_backend PRIVATE -march=native)
     target_link_libraries(zfactor_fixint INTERFACE zfactor_fixint_backend)
 endif()
@@ -201,6 +202,16 @@ if(ZFACTOR_BUILD_TESTS)
     zfactor_apply_common_flags(test_squfof)
     add_test(NAME squfof COMMAND test_squfof)
 
+    add_executable(test_divexact1 tests/fixint/test_divexact1.cpp)
+    target_link_libraries(test_divexact1 PRIVATE zfactor_fixint)
+    zfactor_apply_common_flags(test_divexact1)
+    add_test(NAME divexact1 COMMAND test_divexact1)
+
+    add_executable(test_simd_mod tests/fixint/test_simd_mod.cpp)
+    target_link_libraries(test_simd_mod PRIVATE zfactor_fixint)
+    zfactor_apply_common_flags(test_simd_mod)
+    add_test(NAME simd_mod COMMAND test_simd_mod)
+
     # --- SIQS ---
     add_library(zfactor_lanczos STATIC src/siqs/lanczos.cpp)
     target_include_directories(zfactor_lanczos PRIVATE
@@ -221,6 +232,21 @@ if(ZFACTOR_BUILD_TESTS)
 endif()
 
 if(ZFACTOR_BUILD_BENCHMARKS)
+    add_executable(bench_divexact bench/fixint/bench_divexact.cpp)
+    target_link_libraries(bench_divexact PRIVATE zfactor_fixint zfactor_sieve)
+    target_include_directories(bench_divexact PRIVATE third_party)
+    zfactor_apply_common_flags(bench_divexact)
+
+    add_executable(bench_trial_smooth bench/fixint/bench_trial_smooth.cpp)
+    target_link_libraries(bench_trial_smooth PRIVATE zfactor_fixint zfactor_sieve)
+    target_include_directories(bench_trial_smooth PRIVATE third_party)
+    zfactor_apply_common_flags(bench_trial_smooth)
+
+    add_executable(bench_simd_mod bench/fixint/bench_simd_mod.cpp)
+    target_link_libraries(bench_simd_mod PRIVATE zfactor_fixint zfactor_sieve)
+    target_include_directories(bench_simd_mod PRIVATE third_party)
+    zfactor_apply_common_flags(bench_simd_mod)
+
     add_executable(bench_uint bench/fixint/bench_uint.cpp)
     target_link_libraries(bench_uint PRIVATE zfactor_fixint)
     zfactor_apply_common_flags(bench_uint)

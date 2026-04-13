@@ -35,6 +35,8 @@
 #include "libdivide.h"
 
 #include "zfactor/fixint/uint.h"
+#include "zfactor/fixint/simd_mod.h"
+#include "zfactor/fixint/detail/divexact1.h"
 #include "zfactor/sieve.h"
 
 namespace zfactor {
@@ -449,6 +451,197 @@ inline std::vector<SmallFactor> trial_divide_simd(fixint::UInt<N>& n,
             }
             out.push_back({p, e});
 
+            if (detail_trial::is_one<N>(n.d)) return out;
+        }
+    }
+    return out;
+}
+
+// ============================================================================
+// FP-fast SIMD trial division (AVX2, p < 2^15)
+// ============================================================================
+// Uses the all-FP full-limb Horner kernel from simd_mod.h for screening.
+// Same scalar peel path on hits.
+
+class SimdTrialDivTableFP {
+public:
+    static constexpr uint32_t K = 8;
+    static constexpr uint32_t MAX_PRIME = 1u << 16;  // p < 2^16: r*R2 < 2^33, hilo < 2^49, v < 2^50, exact in f64
+
+    std::vector<fixint::simd_mod::ModGroup8FPFast> groups;
+    std::vector<uint32_t> primes;  // flat, for indexing on hits
+    std::vector<detail_trial::libdiv_u64> peel_divs;
+    std::size_t num_groups = 0;
+
+    std::size_t size() const { return primes.size(); }
+
+    static SimdTrialDivTableFP build(uint32_t bound) {
+        if (bound > MAX_PRIME) bound = MAX_PRIME;
+        SimdTrialDivTableFP t;
+        if (bound < 3) return t;
+
+        auto ps = primes_range_as<uint32_t>(3, bound);
+        std::size_t trimmed = (ps.size() / K) * K;
+        ps.resize(trimmed);
+        t.num_groups = trimmed / K;
+        t.primes = std::move(ps);
+        t.groups.resize(t.num_groups);
+        t.peel_divs.reserve(trimmed);
+
+        uint32_t buf[8];
+        for (std::size_t g = 0; g < t.num_groups; ++g) {
+            for (int i = 0; i < 8; ++i)
+                buf[i] = t.primes[g * 8 + i];
+            t.groups[g] = fixint::simd_mod::make_group_fp_fast(buf);
+        }
+        for (std::size_t i = 0; i < trimmed; ++i)
+            t.peel_divs.emplace_back(t.primes[i]);
+
+        return t;
+    }
+};
+
+template<int N>
+inline std::vector<SmallFactor> trial_divide_simd_fp(fixint::UInt<N>& n,
+                                                     const SimdTrialDivTableFP& table) {
+    std::vector<SmallFactor> out;
+    if (n.is_zero()) return out;
+
+    // 1. Strip factors of 2
+    {
+        unsigned s = fixint::mpn::ctz<N>(n.d);
+        if (s > 0) {
+            fixint::mpn::rshift<N>(n.d, n.d, s);
+            out.push_back({2, s});
+        }
+        if (detail_trial::is_one<N>(n.d)) return out;
+    }
+
+    // 2. FP-fast SIMD sweep: 8 primes at a time, N iterations per group
+    for (std::size_t g = 0; g < table.num_groups; ++g) {
+        if constexpr (N >= 2) {
+            bool top_zero = true;
+            for (int i = 1; i < N; i++) if (n.d[i]) { top_zero = false; break; }
+            if (top_zero && n.d[0] < table.primes[g * 8]) break;
+        }
+        auto [r0, r1] = fixint::simd_mod::simd_mod_8_fp_fast<N>(n.d, table.groups[g]);
+
+        // Convert to u32 for zero-check
+        __m128i i0 = _mm256_cvttpd_epi32(r0);
+        __m128i i1 = _mm256_cvttpd_epi32(r1);
+        __m256i r_vec = _mm256_setr_m128i(i0, i1);
+
+        // Fast reject
+        __m256i zero = _mm256_cmpeq_epi32(r_vec, _mm256_setzero_si256());
+        int mask = _mm256_movemask_epi8(zero);
+        if (mask == 0) continue;
+
+        // Rare path: peel hits
+        alignas(32) uint32_t lanes[8];
+        _mm256_store_si256((__m256i*)lanes, r_vec);
+        for (int l = 0; l < 8; ++l) {
+            if (lanes[l] != 0) continue;
+            uint32_t p = table.primes[g * 8 + l];
+            const auto& dv = table.peel_divs[g * 8 + l];
+
+            if (detail_trial::mod_small<N>(n.d, p, dv) != 0) continue;
+
+            uint32_t e = 1;
+            uint32_t r = detail_trial::divexact_and_mod_next<N>(n.d, p, dv);
+            while (r == 0) {
+                r = detail_trial::divexact_and_mod_next<N>(n.d, p, dv);
+                ++e;
+            }
+            out.push_back({p, e});
+            if (detail_trial::is_one<N>(n.d)) return out;
+        }
+    }
+    return out;
+}
+
+// FP-fast + divexact1 variant: uses modular-inverse divexact for peeling.
+class SimdTrialDivTableFPDE {
+public:
+    static constexpr uint32_t K = 8;
+    static constexpr uint32_t MAX_PRIME = 1u << 16;
+
+    std::vector<fixint::simd_mod::ModGroup8FPFast> groups;
+    std::vector<uint32_t> primes;
+    std::vector<uint64_t> inv;       // p^{-1} mod 2^64 for divexact1
+    std::size_t num_groups = 0;
+
+    std::size_t size() const { return primes.size(); }
+
+    static SimdTrialDivTableFPDE build(uint32_t bound) {
+        if (bound > MAX_PRIME) bound = MAX_PRIME;
+        SimdTrialDivTableFPDE t;
+        if (bound < 3) return t;
+        auto ps = primes_range_as<uint32_t>(3, bound);
+        std::size_t trimmed = (ps.size() / K) * K;
+        ps.resize(trimmed);
+        t.num_groups = trimmed / K;
+        t.primes = std::move(ps);
+        t.groups.resize(t.num_groups);
+        t.inv.resize(trimmed);
+
+        uint32_t buf[8];
+        for (std::size_t g = 0; g < t.num_groups; ++g) {
+            for (int i = 0; i < 8; ++i)
+                buf[i] = t.primes[g * 8 + i];
+            t.groups[g] = fixint::simd_mod::make_group_fp_fast(buf);
+        }
+        for (std::size_t i = 0; i < trimmed; ++i)
+            t.inv[i] = fixint::inverse_mod_2_64(t.primes[i]);
+        return t;
+    }
+};
+
+template<int N>
+inline std::vector<SmallFactor> trial_divide_simd_fp_de(fixint::UInt<N>& n,
+                                                        const SimdTrialDivTableFPDE& table) {
+    std::vector<SmallFactor> out;
+    if (n.is_zero()) return out;
+
+    {
+        unsigned s = fixint::mpn::ctz<N>(n.d);
+        if (s > 0) {
+            fixint::mpn::rshift<N>(n.d, n.d, s);
+            out.push_back({2, s});
+        }
+        if (detail_trial::is_one<N>(n.d)) return out;
+    }
+
+    uint64_t buf_b[N];  // ping-pong buffer for divexact
+
+    for (std::size_t g = 0; g < table.num_groups; ++g) {
+        // Early exit: if n fits in one limb and is < smallest prime in this group,
+        // no more factors possible.
+        if constexpr (N >= 2) {
+            bool top_zero = true;
+            for (int i = 1; i < N; i++) if (n.d[i]) { top_zero = false; break; }
+            if (top_zero && n.d[0] < table.primes[g * 8]) break;
+        }
+
+        auto [r0, r1] = fixint::simd_mod::simd_mod_8_fp_fast<N>(n.d, table.groups[g]);
+
+        __m128i i0 = _mm256_cvttpd_epi32(r0);
+        __m128i i1 = _mm256_cvttpd_epi32(r1);
+        __m256i r_vec = _mm256_setr_m128i(i0, i1);
+
+        __m256i zero = _mm256_cmpeq_epi32(r_vec, _mm256_setzero_si256());
+        int mask = _mm256_movemask_epi8(zero);
+        if (mask == 0) continue;
+
+        alignas(32) uint32_t lanes[8];
+        _mm256_store_si256((__m256i*)lanes, r_vec);
+        for (int l = 0; l < 8; ++l) {
+            if (lanes[l] != 0) continue;
+            uint32_t p = table.primes[g * 8 + l];
+            uint64_t inv_p = table.inv[g * 8 + l];
+
+            uint32_t e = fixint::divexact1_ip_peel<N>(n.d, inv_p, p);
+            if (e == 0) continue;
+            out.push_back({p, e});
             if (detail_trial::is_one<N>(n.d)) return out;
         }
     }
